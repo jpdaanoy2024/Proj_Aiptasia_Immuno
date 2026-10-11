@@ -1,0 +1,337 @@
+---
+title: "Aiptasia_Isotope_analysis2026"
+author: "JK"
+date: "2026-02-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(emmeans)
+library(ggplot2)
+```
+
+
+```{r}
+library(tidyverse)
+library(emmeans)
+library(multcomp)
+#formula for calculation here
+#https://link.springer.com/article/10.1186/s40168-023-01738-0#Sec12
+# δ13C (‰) = ( rC(sample) / rC(unlabeled) - 1 ) * 1000
+# δ15N (‰) = ( rN(sample) / rN(unlabeled) - 1 ) * 1000
+#
+# where rC(sample) and rC(unlabeled) are the count ratios of 13C12C−/12C2−
+# in the sample and in an unlabeled control, respectively.
+# rN(sample) and rN(unlabeled) are the count ratios of 15N12C−/14N12C−
+# in the sample and in an unlabeled control, respectively.
+
+# ----------------------------
+# Load + compute delta values
+# ----------------------------
+dat <- read.csv("Nutrient_data2026.csv")
+
+Rbase_N <- c(Host = 0.00374, Symbiont = 0.00371)
+Rbase_C <- c(Host = 0.01093, Symbiont = 0.01083)
+
+
+my_cols <- c(
+  "Control" = "#4292c6",
+  "Heat"    = "coral1",
+  "Hnit"    = "#D65278"
+)
+str(dat)
+dat <- dat %>%
+  mutate(
+    Treatment = factor(Treatment, levels = c("Control","Heat","Hnit")),
+    Fraction  = factor(Fraction,  levels = c("Host","Symbiont")),
+    Delta15N  = (`X15N.14N.ratio` / Rbase_N[Fraction] - 1) * 1000,
+    Delta13C  = (`X13C.12C.ratio` / Rbase_C[Fraction] - 1) * 1000
+  )
+```
+
+
+
+```{r}
+# split into two matrices host and sym
+host_df <- dat %>% filter(Fraction == "Host")
+sym_df  <- dat %>% filter(Fraction == "Symbiont")
+
+# (optional sanity check)
+table(host_df$Treatment)
+table(sym_df$Treatment)
+```
+
+
+```{r}
+#HOST long + summary
+host_long <- host_df %>%
+  pivot_longer(c(Delta13C, Delta15N), names_to = "metric", values_to = "value") %>%
+  mutate(metric = factor(metric, levels = c("Delta13C","Delta15N")))
+
+host_sum <- host_long %>%
+  group_by(Treatment, metric) %>%
+  summarise(
+    mean = mean(value, na.rm = TRUE),
+    se   = sd(value, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+host_sum
+```
+
+
+```{r}
+# HOST stats delta13C
+m_host_C <- lm(Delta13C ~ Treatment, data = host_df)
+cat("\n================ HOST: Δ13C ================\n")
+print(anova(m_host_C))
+```
+
+
+```{r}
+print(pairs(emmeans(m_host_C, ~ Treatment), adjust = "tukey"))
+```
+
+
+```{r}
+host_letters_C <- cld(
+  emmeans(m_host_C, ~ Treatment),
+  Letters = letters, adjust = "tukey", alpha = 0.05
+) %>%
+  as.data.frame() %>%
+  transmute(Treatment, metric = "Delta13C", letter = gsub(" ", "", .group))
+host_letters_C
+```
+
+
+```{r}
+# ---- HOST stats delta15N
+m_host_N <- lm(Delta15N ~ Treatment, data = host_df)
+print(anova(m_host_N))
+```
+
+
+```{r}
+print(pairs(emmeans(m_host_N, ~ Treatment), adjust = "tukey"))
+```
+
+
+```{r}
+host_letters_N <- cld(
+  emmeans(m_host_N, ~ Treatment),
+  Letters = letters, adjust = "tukey", alpha = 0.05
+) %>%
+  as.data.frame() %>%
+  transmute(Treatment, metric = "Delta15N", letter = gsub(" ", "", .group))
+host_letters_N
+```
+
+
+```{r}
+# ---- HOST letters + y positions
+host_letters <- bind_rows(host_letters_C, host_letters_N) %>%
+  mutate(metric = factor(metric, levels = c("Delta13C","Delta15N")))
+
+host_ypos <- host_long %>%
+  group_by(metric) %>%
+  summarise(
+    y_max = max(value, na.rm = TRUE),
+    span  = diff(range(value, na.rm = TRUE)),
+    .groups = "drop"
+  ) %>%
+  mutate(y_lab = y_max + 0.08 * span)
+
+host_letters <- host_letters %>% left_join(host_ypos, by = "metric")
+host_letters
+```
+
+
+```{r}
+# ---- HOST plot
+p_host <- ggplot() +
+  geom_col(
+    data = host_sum,
+    aes(Treatment, mean, fill = Treatment),
+    width = 0.7, alpha = 0.7,
+    color = "black", linewidth = 0.3
+  ) +
+  geom_errorbar(
+    data = host_sum,
+    aes(Treatment, ymin = mean - se, ymax = mean + se),
+    width = 0.2
+  ) +
+  geom_jitter(
+    data = host_long,
+    aes(Treatment, value, fill = Treatment),
+    width = 0.12, height = 0,
+    size = 2.6, alpha = 0.9,
+    shape = 21, color = "black", stroke = 0.4
+  ) +
+  geom_text(
+    data = host_letters,
+    aes(Treatment, y_lab, label = letter),
+    fontface = "bold", size = 5
+  ) +
+  facet_wrap(
+    ~ metric,
+    scales = "free_y",
+    labeller = labeller(metric = c(
+      Delta13C = "Host: Δ13C (‰) vs baseline",
+      Delta15N = "Host: Δ15N (‰) vs baseline"
+    ))
+  ) +
+  scale_fill_manual(values = my_cols) +
+  labs(x = NULL, y = "Per mil (‰)") +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    strip.background = element_rect(fill = "white", color = "black"),
+    strip.text = element_text(face = "bold")
+  )
+
+p_host
+ggsave("Host_DeltaC_DeltaN_letters.pdf", plot = p_host, width = 5, height = 3, units = "in")
+```
+
+
+```{r}
+# 
+# SYMBIONT: plot + ANOVA + Tukey + letters
+
+
+#SYM long + summary
+sym_long <- sym_df %>%
+  pivot_longer(c(Delta13C, Delta15N), names_to = "metric", values_to = "value") %>%
+  mutate(metric = factor(metric, levels = c("Delta13C","Delta15N")))
+
+sym_sum <- sym_long %>%
+  group_by(Treatment, metric) %>%
+  summarise(
+    mean = mean(value, na.rm = TRUE),
+    se   = sd(value, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+sym_sum 
+```
+
+
+```{r}
+#SYM stats delta13C
+m_sym_C <- lm(Delta13C ~ Treatment, data = sym_df)
+cat("\n============= SYMBIONT: Δ13C =============\n")
+print(anova(m_sym_C))
+```
+
+
+```{r}
+print(pairs(emmeans(m_sym_C, ~ Treatment), adjust = "tukey"))
+```
+
+
+```{r}
+sym_letters_C <- cld(
+  emmeans(m_sym_C, ~ Treatment),
+  Letters = letters, adjust = "tukey", alpha = 0.05
+) %>%
+  as.data.frame() %>%
+  transmute(Treatment, metric = "Delta13C", letter = gsub(" ", "", .group))
+sym_letters_C
+```
+
+
+```{r}
+# SYM stats delta15N
+m_sym_N <- lm(Delta15N ~ Treatment, data = sym_df)
+print(anova(m_sym_N))
+```
+
+
+```{r}
+print(pairs(emmeans(m_sym_N, ~ Treatment), adjust = "tukey"))
+```
+
+
+```{r}
+sym_letters_N <- cld(
+  emmeans(m_sym_N, ~ Treatment),
+  Letters = letters, adjust = "tukey", alpha = 0.05
+) %>%
+  as.data.frame() %>%
+  transmute(Treatment, metric = "Delta15N", letter = gsub(" ", "", .group))
+sym_letters_N
+```
+
+
+```{r}
+# SYM letters + y positions
+sym_letters <- bind_rows(sym_letters_C, sym_letters_N) %>%
+  mutate(metric = factor(metric, levels = c("Delta13C","Delta15N")))
+
+sym_ypos <- sym_long %>%
+  group_by(metric) %>%
+  summarise(
+    y_max = max(value, na.rm = TRUE),
+    span  = diff(range(value, na.rm = TRUE)),
+    .groups = "drop"
+  ) %>%
+  mutate(y_lab = y_max + 0.08 * span)
+
+sym_letters <- sym_letters %>% left_join(sym_ypos, by = "metric")
+sym_letters
+```
+
+
+```{r}
+#SYM plot
+p_sym <- ggplot() +
+  geom_col(
+    data = sym_sum,
+    aes(Treatment, mean, fill = Treatment),
+    width = 0.7, alpha = 0.7,
+    color = "black", linewidth = 0.3
+  ) +
+  geom_errorbar(
+    data = sym_sum,
+    aes(Treatment, ymin = mean - se, ymax = mean + se),
+    width = 0.2
+  ) +
+  geom_jitter(
+    data = sym_long,
+    aes(Treatment, value, fill = Treatment),
+    width = 0.12, height = 0,
+    size = 2.6, alpha = 0.9,
+    shape = 21, color = "black", stroke = 0.4
+  ) +
+  geom_text(
+    data = sym_letters,
+    aes(Treatment, y_lab, label = letter),
+    fontface = "bold", size = 5
+  ) +
+  facet_wrap(
+    ~ metric,
+    scales = "free_y",
+    labeller = labeller(metric = c(
+      Delta13C = "Symbiont: Δ13C (‰) vs baseline",
+      Delta15N = "Symbiont: Δ15N (‰) vs baseline"
+    ))
+  ) +
+  scale_fill_manual(values = my_cols) +
+  labs(x = NULL, y = "Per mil (‰)") +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    strip.background = element_rect(fill = "white", color = "black"),
+    strip.text = element_text(face = "bold")
+  )
+
+p_sym
+ggsave("Symbiont_DeltaC_DeltaN_letters.pdf", plot = p_sym, width = 5, height = 3, units = "in")
+
+```
+
+
+
+
+
+
