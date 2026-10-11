@@ -1,0 +1,448 @@
+---
+title: "DGE_Analysis_aiptasia_2024"
+author: "JK"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r Call Library,echo=TRUE}
+library(htmltools)
+library(arrayQualityMetrics)
+library(DESeq2)
+library(tidyr)
+library(genefilter)
+library(cowplot)
+library(emmeans)
+library(gplots)
+library(reshape2)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(ggtext)
+library(ape)
+library(vegan)
+library(RColorBrewer)
+
+setwd("~/Desktop/Aip2024_DGE/")
+```
+
+
+```{r aesthetics, echo=TRUE}
+#Assign colors and shapes
+#shapes
+shapes = c("V" = 21, "C" = 22, "H"= 24)
+#colors for treatment
+colvec<- c("apo_Cont"= "#4292c6","sym_Cont"= "#4292c6","apo_Nit" = "#556B2F","sym_Nit" = "#556B2F","apo_Heat" = "coral1","sym_Heat" = "coral1","apo_Hnit" = "#D65278","sym_Hnit" = "#D65278")
+#Brown: CE8451
+#Pink: D65278
+#Green:307253
+#Gray:9FA6A9
+#green "#556B2F"
+#colors for baseline apo and sym
+col<-c("gray40","#8B4513")
+```
+
+```{r}
+#analyse full matrix
+#coldata<-read.csv("sample_name_ALl.csv")
+#coldata
+#read in counts . Host only data
+#countData <- read.csv("Aiptasia_all_counts_HOST.csv",header = T, row.names = 1)
+# Sort column based on alphabetical order. Get the names first.
+#sorted_col_names <- sort(names(countData))
+# Reorder the data frame based on the sorted column names
+#countData_sorted <- countData[, sorted_col_names]
+#write.csv(countData_sorted, file="Aiptasia_all_counts_HOST_final2024.csv")
+
+coldata<-read.csv("sample_name_ALl.csv")
+str(coldata)
+#read in counts . Host only data
+countData <- read.csv("Aiptasia_all_counts_HOST_final2024.csv",header = T, row.names = 1)
+#visualize all data to bar graph 
+totalCounts=colSums(countData)
+totalCounts
+# Convert totalCounts to a data frame
+totalCounts_df <- data.frame(
+  X = names(totalCounts),
+  totalCount = as.numeric(totalCounts),
+  stringsAsFactors = FALSE
+)
+totalCounts_df
+merged_df <- left_join(coldata, totalCounts_df, by = "X")
+merged_df
+# Create the barplot using ggplot
+ggplot(merged_df, aes(x = X, y = totalCount, fill = treatment,group=strain)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 45, size = 8),  # Rotate x-axis labels 45 degrees
+        axis.text.y = element_text(size = 12))  +
+  labs(title = "Barplot of Total Counts in Treatments", x = "Sample ID", y = "Total Count") +
+  scale_fill_manual(values = colvec) +
+  theme_classic()
+
+totCounts<-ggplot(merged_df, aes(x = X, y = totalCount, fill = treatment,group=strain)) +
+  geom_bar(stat = "identity")+
+  scale_fill_manual(values = colvec) +
+  labs(title = "Barplot of Total Counts in Treatments", x = "Sample ID", y = "Total Count")+
+  theme_classic()
+totCounts+theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5,size=6))
+ggsave("~/Desktop/CC7_totalcounts_barplot.pdf", width = 8, height = 10)
+```
+
+```{r OUTLIER detection. Run once}
+str(coldata)
+dds=DESeqDataSetFromMatrix(countData=round(countData),
+                           colData= coldata,
+                           design = ~strain+treatment)
+
+#conduct outlier test to see which samples are outliers
+vsd.ge=assay(vst(dds))
+rl=vst(dds)
+e=ExpressionSet(assay(rl), AnnotatedDataFrame(as.data.frame(colData(rl))))
+arrayQualityMetrics(e,outdir="outlier",intgroup=c("treatment"),force=T)
+# double-click index.html
+
+
+#####you only ever need to run the above code once. Outliers are decided at the beginning. 
+## I like to close R and restart with packages etc
+##So, please save your script and restart R
+#no outliers detected!
+```
+
+```{r}
+#analyse full matrix
+coldata<-read.csv("sample_name_ALl.csv")
+coldata
+#read in counts . Host only data
+countData <- read.csv("Aiptasia_all_counts_HOST_final2024.csv",header = T, row.names = 1)
+countData
+
+dds=DESeqDataSetFromMatrix(countData=round(countData),
+                           colData= coldata,
+                           design =  ~strain+treatment)
+
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+#one step DESeq
+dds<-DESeq(dds)
+# transform the data for plotting 
+rlogMF=rlogTransformation(dds, blind=TRUE)
+rld=assay(rlogMF)
+table(complete.cases(rld))
+write.csv(rld, "~/Desktop/RLog_normalized_aiptasia_counts.csv", quote=F)
+```
+```{r}
+#Baseline DGE of sym and apo
+# Filter for control samples only
+control_coldata <- coldata[coldata$Treatment_1 == "Control", ]
+
+# Ensure the countData only contains columns for the control samples
+control_countData <- countData[, control_coldata$X]
+
+# Create DESeqDataSet object with control samples only
+dds <- DESeqDataSetFromMatrix(countData = round(control_countData),
+                              colData = control_coldata,
+                              design = ~ state+strain)
+
+# Filter low-count genes
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+
+# Run DESeq analysis
+dds <- DESeq(dds)
+
+# Output results
+results(dds)
+#nit vs control pairwise comparisons of apo data
+control_coldata$state<-factor(control_coldata$state, levels=c("sym","apo"))
+res_state <- results(dds, contrast=c("state","sym","apo"))
+res_state
+#how many FDR < 10%?
+table(res_state$padj<0.05)
+#FALSE  TRUE 
+# 4972   116  
+summary(res_state, alpha=0.05)
+#out of 22689 with nonzero total read count
+#adjusted p-value < 0.05
+#LFC > 0 (up)       : 50, 0.22%
+#LFC < 0 (down)     : 66, 0.29%
+#outliers [1]       : 15, 0.066%
+#low counts [2]     : 17586, 78%
+write.table(res_state, file="DGE_sym_State.txt", quote=F, sep="\t")
+```
+
+
+```{r Apo DGE}
+#make dispersion plot
+head(dds)
+res<- results(dds)
+#Look at dispersions plot
+plot<-plotDispEsts(dds, main="Aip_tagSeq Dispersion plot")
+ggsave("~/Desktop/Aip2024_DGE/Aiptasia_dispersion.pdf", width = 4.3, height = 3)
+
+str(coldata)
+
+#nit vs control pairwise comparisons of apo data
+coldata$treatment<-factor(coldata$treatment, levels=c("apo_Nit","apo_Cont"))
+res_apoNit <- results(dds, contrast=c("treatment","apo_Nit","apo_Cont"))
+res_apoNit
+#how many FDR < 10%?
+table(res_apoNit$padj<0.05)
+#FALSE  TRUE 
+#25581     1 
+summary(res_apoNit, alpha=0.05)
+#adjusted p-value < 0.05
+#LFC > 0 (up)       : 0, 0%
+#LFC < 0 (down)     : 1, 0.0039%
+#outliers [1]       : 10, 0.039%
+#low counts [2]     : 0, 0%
+#export results as table
+write.table(res_apoNit, file="apoNit_stress.txt", quote=F, sep="\t")
+#filter DGE less than padj 0.05
+res_apoNit_fltd <- read.delim("apoNit_stress.txt",header = T)
+res_apoNit_fltd<-subset(res_apoNit_fltd,padj <= 0.05 )
+
+#heat vs control pairwise comparisons of apo data
+coldata$treatment<-factor(coldata$treatment, levels=c("apo_Heat","apo_Cont"))
+res_apoHeat <- results(dds, contrast=c("treatment","apo_Heat","apo_Cont"))
+res_apoHeat
+#how many FDR < 10%?
+table(res_apoHeat$padj<0.05)
+#FALSE  TRUE 
+#7413   407
+summary(res_apoHeat, alpha=0.05)
+#out of 25592 with nonzero total read count
+#adjusted p-value < 0.05
+#LFC > 0 (up)       : 817, 3.2%
+#LFC < 0 (down)     : 1144, 4.5%
+#outliers [1]       : 10, 0.039%
+#low counts [2]     : 7932, 31%
+#export results as table
+write.table(res_apoHeat, file="apoHeat_stress.txt", quote=F, sep="\t")
+#filter DGE less than padj 0.05
+res_apoHeat_fltd <- read.delim("apoHeat_stress.txt",header = T)
+res_apoHeat_fltd<-subset(res_apoHeat_fltd,padj <= 0.05 )
+
+#Hnit vs control pairwise comparisons of apo data
+coldata$treatment<-factor(coldata$treatment, levels=c("apo_Hnit","apo_Cont"))
+res_apoHnit <- results(dds, contrast=c("treatment","apo_Hnit","apo_Cont"))
+res_apoHnit
+#how many FDR < 10%?
+table(res_apoHnit$padj<0.05)
+#FALSE  TRUE 
+#25581     1 
+summary(res_apoHnit, alpha=0.05)
+#out of 25592 with nonzero total read count
+#adjusted p-value < 0.05
+#LFC > 0 (up)       : 1002, 3.9%
+#LFC < 0 (down)     : 1220, 4.8%
+#outliers [1]       : 10, 0.039%
+#low counts [2]     : 8924, 35%
+#(mean count < 2)
+#export results as table
+write.table(res_apoHnit, file="apoHnit_stress.txt", quote=F, sep="\t")
+#filter DGE less than padj 0.05
+res_apoHnit_fltd <- read.delim("apoHnit_stress.txt",header = T)
+res_apoHnit_fltd<-subset(res_apoHnit_fltd,padj <= 0.05 )
+```
+
+```{r Sym DGE}
+#nit vs control pairwise comparisons of sym data
+coldata$treatment<-factor(coldata$treatment, levels=c("sym_Nit","sym_Cont"))
+res_symNit <- results(dds, contrast=c("treatment","sym_Nit","sym_Cont"))
+res_symNit
+#how many FDR < 10%?
+table(res_symNit$padj<0.05)
+#FALSE  TRUE 
+#12170    24 
+summary(res_symNit, alpha=0.05)
+#adjusted p-value < 0.05
+#LFC > 0 (up)       : 2, 0.0078%
+#LFC < 0 (down)     : 22, 0.086%
+#outliers [1]       : 10, 0.039%
+#low counts [2]     : 13388, 52%
+#export results as table
+write.table(res_symNit, file="symNit_stress.txt", quote=F, sep="\t")
+#filter DGE less than padj 0.05
+res_symNit_fltd <- read.delim("symNit_stress.txt",header = T)
+res_symNit_fltd<-subset(res_symNit_fltd,padj <= 0.05 )
+
+#heat vs control pairwise comparisons of sym data
+coldata$treatment<-factor(coldata$treatment, levels=c("sym_Heat","sym_Cont"))
+res_symHeat <- results(dds, contrast=c("treatment","sym_Heat","sym_Cont"))
+res_symHeat
+#how many FDR < 10%?
+table(res_symHeat$padj<0.05)
+#FALSE  TRUE 
+#15575  2571 
+summary(res_symHeat, alpha=0.05)
+#out of 25592 with nonzero total read count
+#adjusted p-value < 0.05
+#LFC > 0 (up)       : 1128, 4.4%
+#LFC < 0 (down)     : 1443, 5.6%
+#outliers [1]       : 10, 0.039%
+#low counts [2]     : 7436, 29%
+#export results as table
+write.table(res_symHeat, file="symHeat_stress.txt", quote=F, sep="\t")
+#filter DGE less than padj 0.05
+res_symHeat_fltd <- read.delim("symHeat_stress.txt",header = T)
+res_symHeat_fltd<-subset(res_symHeat_fltd,padj <= 0.05 )
+str(res_symHeat_fltd)
+#Hnit vs control pairwise comparisons of sym data
+coldata$treatment<-factor(coldata$treatment, levels=c("sym_Hnit","sym_Cont"))
+res_symHnit <- results(dds, contrast=c("treatment","sym_Hnit","sym_Cont"))
+res_symHnit
+#how many FDR < 10%?
+table(res_symHnit$padj<0.05)
+#FALSE  TRUE 
+#15504  4129 
+summary(res_symHnit, alpha=0.05)
+#out of 25592 with nonzero total read count
+#adjusted p-value < 0.05
+#LFC > 0 (up)       : 1913, 7.5%
+#LFC < 0 (down)     : 2216, 8.7%
+#outliers [1]       : 10, 0.039%
+#low counts [2]     : 5949, 23%
+#export results as table
+write.table(res_symHnit, file="symHnit_stress.txt", quote=F, sep="\t")
+#filter DGE less than padj 0.05
+res_symHnit_fltd <- read.delim("symHnit_stress.txt",header = T)
+res_symHnit_fltd<-subset(res_symHnit_fltd,padj <= 0.05 )
+str(res_symHnit_fltd)
+```
+
+```{r}
+# Categorize the genes as upregulated or downregulated
+# Function to categorize and summarize data
+summarize_data <- function(data, label) {
+  data$regulation <- ifelse(data$log2FoldChange > 0, "Upregulated", "Downregulated")
+  summary_data <- as.data.frame(table(data$regulation))
+  colnames(summary_data) <- c("Regulation", "Count")
+  summary_data$Dataset <- label
+  return(summary_data)
+}
+
+# Summarize each data frame
+ApoNitrate <- summarize_data(res_apoNit_fltd, "ApoNitrate")
+ApoHeat <- summarize_data(res_apoHeat_fltd, "ApoHeat")
+ApoHnit <- summarize_data(res_apoHnit_fltd, "ApoHnit")
+SymNitrate <- summarize_data(res_symNit_fltd, "SymNitrate")
+SymHeat <- summarize_data(res_symHeat_fltd, "SymHeat")
+SymHNit <- summarize_data(res_symHnit_fltd, "SymHNit")
+
+# Combine all summary data frames
+combined_data <- bind_rows(ApoNitrate,ApoHeat,ApoHnit,SymNitrate,SymHeat,SymHNit)
+combined_data$Dataset<-as.factor(combined_data$Dataset)
+# Set the order of the Dataset factor
+combined_data$Dataset <- factor(combined_data$Dataset, levels = c("ApoNitrate","ApoHeat","ApoHnit", "SymNitrate","SymHeat", "SymHNit"))
+str(combined_data)
+# C
+col<-c("Upregulated"="Red","Downregulated"="Blue")
+# Create the combined stacked bar plot
+ggplot(combined_data, aes(x = Dataset, y = Count, fill = Regulation)) +
+  geom_bar(stat = "identity") +
+  theme_classic() +
+  labs(x = "Treatment",
+       y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  scale_fill_manual(values = col)+coord_flip()+geom_text(aes(label = Count), position = position_stack(vjust = 0.5), color = "grey")
+
+ggsave("~/Desktop/Aip2024_DGE/DGE_stack_barplot.pdf", width = 4.3, height = 3)
+```
+
+```{r Pullout genename from DGEs}
+library(tibble)
+# Convert row names to a column and rename it anve save as txt. these files will be used to feed in stringdb
+#read Aiptasia annotation file containing gene names.
+gg=read.csv("Gene_name.csv",header=TRUE)
+#rename rows to match downstream data set
+colnames(gg)<-c("rowname","genename")
+
+#apo_Heat
+res_apoHeat_fltd_1 <- rownames_to_column(res_apoHeat_fltd)
+str(res_apoHeat_fltd_1)
+#merge files and save as txt
+res_apoHeat_fltd_2<-left_join(res_apoHeat_fltd_1, gg, by="rowname") # add in genenames
+write.table(res_apoHeat_fltd_2, file="apoHeat_stress_DGE_string.txt", quote=F, sep="\t")
+
+#sym_Heat
+res_symHeat_fltd_1 <- rownames_to_column(res_symHeat_fltd)
+str(res_symHeat_fltd_1)
+#merge files and save as txt
+res_symHeat_fltd_2<-left_join(res_symHeat_fltd_1, gg, by="rowname") # add in genenames
+write.table(res_symHeat_fltd_2, file="symHeat_stress_DGE_string.txt", quote=F, sep="\t")
+
+
+#apo_Heat
+res_apoHnit_fltd_1 <- rownames_to_column(res_apoHnit_fltd)
+str(res_apoHnit_fltd_1)
+#merge files and save as txt
+res_apoHnit_fltd_2<-left_join(res_apoHnit_fltd_1, gg, by="rowname") # add in genenames
+write.table(res_apoHnit_fltd_2, file="apoHnit_stress_DGE_string.txt", quote=F, sep="\t")
+
+#sym_HNit
+res_symHnit_fltd_1 <- rownames_to_column(res_symHnit_fltd)
+str(res_symHnit_fltd_1)
+#merge files and save as txt
+res_symHnit_fltd_2<-left_join(res_symHnit_fltd_1, gg, by="rowname") # add in genenames
+write.table(res_symHnit_fltd_2, file="symHnit_stress_DGE_string.txt", quote=F, sep="\t")
+```
+
+```{r Make bubble plot from stingdb enrichment}
+# Example data frame
+data<-read.delim("~/Desktop/All_BP_State_Enriched_filtered.txt", header=TRUE)
+str(data)
+data$Treatment=as.factor(data$Treatment)
+data$State=as.factor(data$State)
+colvec<- c("Heat"="coral1","Heat+Nitrate" = "#D65278")
+# Add a column for -log10(FDR)
+data$neg_log_fdr <- -log10(data$false.discovery.rate)
+
+# Create the bubble plot
+ggplot(data, aes(x = observed.gene.count, y = term.description, size = neg_log_fdr, fill=Treatment)) +
+  geom_point(shape = 21) +
+  scale_fill_manual(values = colvec)+
+  scale_size_area(max_size = 10) +
+  theme_bw() +
+  labs(
+    x = "Gene Count",
+    y = "Description",
+    size = "FDR(-log)",
+    title = "Enriched pathways in heat"
+  ) + theme(axis.text.x = element_text(angle = 45, hjust = 1),
+            axis.text.y = element_text(size = 12))+facet_wrap(~State)
+ggsave("~/Desktop/ALL_BP_enriched.pdf", width = 15, height = 12)
+```
+```{r}
+# Load necessary library
+library(dplyr)
+
+# Read the CSV file (assuming the file is named 'data.csv')
+data <- read.delim("All_BP_State_Enriched_filtered.txt")
+# Check the structure of the data to confirm the column names
+str(data)
+# Filter rows where "term description" is "Apoptotic process"
+apoptotic_data <- data %>% filter(term.description == "Apoptotic process")
+# Retrieve the "matching.proteins.in.your.network..labels." column from the filtered data
+gene_labels <- apoptotic_data$matching.proteins.in.your.network..labels.
+# Split the genes by commas
+split_genes <- strsplit(as.character(gene_labels), split = ",")
+# Unlist the split genes and create a new dataframe
+apop_genes_df <- unique(unlist(split_genes))
+# Unlist the split genes and remove duplicates
+apop_genes_df <- unique(unlist(split_genes))
+# Create a new dataframe
+apop_genes_df <- data.frame(Gene = apop_genes_df)
+#make a heatmap of apoptotic and immune genes, bin by state
+
+
+```
