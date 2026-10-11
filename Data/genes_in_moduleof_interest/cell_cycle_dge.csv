@@ -1,0 +1,7 @@
+﻿Gene,Gene_name,Cell-cycle stage,Role
+AIPGENE22512,Dp-1-2,G1/S,Makes complexes with E2F transcription factors that then bind to different proteins and changes their function for cell-cycle progression
+AIPGENE29020,Mcm3,S,Forms MCM helicase complex that is required during DNA replication; loaded onto chromatin by the origin recognition complex (ORC) at the sites of replication during the G1 phase; unwinds DNA; elicits replication and elongation; strict localization and timings to ensure that DNA replication only occurs once per cell cycle
+AIPGENE19027,GADD45,G2/M,Inhibitor of cyclin B/CDK1; apoptosis; cell-cycle arrest
+AIPGENE26697,Mdm2,G2/M,Antagonistic controller of p53 and inhibits its role in apoptotic initiation and the G1 arrest; delays cell-cycle progression in the G2/M phase
+AIPGENE20570,Cdc14A_phos,M,"Regulation of the G2/damage checkpoint and essential for the exit from mitosis by dephosphorylation of CDK1 substrates—mitotic cyclins; indirect role during DNA replication by suppressing CDKs upon mitotic exit, allowing the effective formation of pre-RC complexes during the S phase"
+AIPGENE20640,Mob1,M,Cell polarity marker involved in the mitotic exit network (MEN) signalling cascade and associates with spindle pole bodies throughout the cell cycle
