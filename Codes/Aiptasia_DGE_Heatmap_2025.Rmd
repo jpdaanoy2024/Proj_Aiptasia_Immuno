@@ -1,0 +1,1221 @@
+---
+title: "Figures_revisualized"
+author: "JK"
+date: "2025-06-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Load libraries
+library(dplyr)
+library(pheatmap)
+library(RColorBrewer)
+
+# Set working directory (update as needed)
+setwd("~/Desktop/Aiptasia")
+
+# File names and treatments
+file_names <- c("symNit_stress.txt", "symHnit_stress.txt", "symHeat_stress.txt", 
+                "apoNit_stress.txt", "apoHnit_stress.txt", "apoHeat_stress.txt")
+treatment_names <- c("symNit", "symHnit", "symHeat", "apoNit", "apoHnit", "apoHeat")
+
+# Read & merge DGE files
+dfs <- lapply(seq_along(file_names), function(i) {
+  df <- read.delim(file_names[i], header = TRUE, stringsAsFactors = FALSE)[, c("Gene", "log2FoldChange", "padj")]
+  colnames(df)[2:3] <- paste0(c("log2FC_", "padj_"), treatment_names[i])
+  df
+})
+merged <- Reduce(function(x, y) full_join(x, y, by = "Gene"), dfs)
+
+# Read genes of interest and filter
+cell_cycle_genes <- read.csv("genes_in_moduleof_interest/cell_cycle_dge.csv", stringsAsFactors = FALSE)
+gene_ids <- cell_cycle_genes$Gene
+merged_filtered <- merged %>% filter(Gene %in% gene_ids)
+merged_filtered <- merged_filtered[match(gene_ids, merged_filtered$Gene), ]
+rownames(merged_filtered) <- cell_cycle_genes$Gene_name
+
+# Extract log2FC and padj matrices
+log2fc_cols <- grep("^log2FC_", colnames(merged_filtered), value = TRUE)
+padj_cols <- grep("^padj_", colnames(merged_filtered), value = TRUE)
+log2fc_mat <- as.matrix(merged_filtered[, log2fc_cols])
+padj_mat   <- as.matrix(merged_filtered[, padj_cols])
+
+# Prepare matrix for display: numbers only for padj < 0.05
+numbers_to_display <- ifelse(padj_mat < 0.05 & !is.na(log2fc_mat), round(log2fc_mat, 2), "")
+
+# Relabel columns for clarity and build annotation data frame
+treatment_labels <- gsub("^log2FC_", "", colnames(log2fc_mat))
+treatment_labels <- gsub("sym", "Symbiotic_", treatment_labels)
+treatment_labels <- gsub("apo", "Aposymbiotic_", treatment_labels)
+treatment_labels <- gsub("Hnit", "Heat+Nitrate", treatment_labels)
+treatment_labels <- gsub("heat", "Heat", treatment_labels)
+treatment_labels <- gsub("nit", "Nitrate", treatment_labels)
+colnames(log2fc_mat) <- treatment_labels
+colnames(numbers_to_display) <- treatment_labels
+
+col_ann <- data.frame(
+  state = ifelse(grepl("^Aposymbiotic", colnames(log2fc_mat)), "Aposymbiotic", "Symbiotic"),
+  Treatment = gsub(".*_(.*)$", "\\1", colnames(log2fc_mat)),
+  row.names = colnames(log2fc_mat)
+)
+col_ann$Treatment[col_ann$Treatment == "Nit"] <- "Nitrate"  # Fix abbreviation
+
+# Define colors for annotations
+ann_colors <- list(
+  state = c(Symbiotic = "#8B4513", Aposymbiotic = "gray40"),
+  Treatment = c(Nitrate = "#556B2F", Heat = "coral1", `Heat+Nitrate` = "#D65278")
+)
+
+# Order: Aposymbiotic first, then Symbiotic; within each, Nit, Heat, Heat+Nit
+desired_treatment_order <- c("Nitrate", "Heat", "Heat+Nitrate")
+ordered_idx <- order(
+  factor(col_ann$state, levels = c("Aposymbiotic", "Symbiotic")),
+  factor(col_ann$Treatment, levels = desired_treatment_order)
+)
+log2fc_mat <- log2fc_mat[, ordered_idx]
+numbers_to_display <- numbers_to_display[, ordered_idx]
+col_ann <- col_ann[ordered_idx, , drop = FALSE]
+
+# Heatmap color scale and breaks
+col <- colorRampPalette(brewer.pal(11, "RdBu"))(100)
+breaks <- seq(-1.5, 1.5, length.out = 101)
+
+# Plot the heatmap (remove y-axis/row labels)
+pdf("cell_cycle_heatmap1.pdf", height = 1.5, width = 3.9)
+pheatmap(
+  log2fc_mat,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  scale = "none",
+  color = rev(col),
+  breaks = breaks,
+  na_col = "white",
+  display_numbers = numbers_to_display,
+  fontsize_row = 8,
+  fontsize_col = 10,
+  fontsize_number = 4,
+  number_color = "white",
+  annotation_col = col_ann,
+  annotation_colors = ann_colors,
+  labels_col = NA,
+  border_color      = "black"
+)
+dev.off()
+```
+
+```{r}
+# Load libraries
+library(dplyr)
+library(pheatmap)
+library(RColorBrewer)
+
+# Set working directory (update as needed)
+setwd("~/Desktop/Aiptasia")
+
+# File names and treatments
+file_names <- c("symNit_stress.txt", "symHnit_stress.txt", "symHeat_stress.txt", 
+                "apoNit_stress.txt", "apoHnit_stress.txt", "apoHeat_stress.txt")
+treatment_names <- c("symNit", "symHnit", "symHeat", "apoNit", "apoHnit", "apoHeat")
+
+# Read & merge DGE files
+dfs <- lapply(seq_along(file_names), function(i) {
+  df <- read.delim(file_names[i], header = TRUE, stringsAsFactors = FALSE)[, c("Gene", "log2FoldChange", "padj")]
+  colnames(df)[2:3] <- paste0(c("log2FC_", "padj_"), treatment_names[i])
+  df
+})
+merged <- Reduce(function(x, y) full_join(x, y, by = "Gene"), dfs)
+read.csv("AIP_rlog_transformed_counts.csv")
+# Read genes of interest and filter
+cell_cycle_genes <- read.csv("Symbiosis_genes2.csv", stringsAsFactors = FALSE)
+gene_ids <- cell_cycle_genes$Gene
+merged_filtered <- merged %>% filter(Gene %in% gene_ids)
+merged_filtered <- merged_filtered[match(gene_ids, merged_filtered$Gene), ]
+rownames(merged_filtered) <- cell_cycle_genes$Gene_name
+
+# Extract log2FC and padj matrices
+log2fc_cols <- grep("^log2FC_", colnames(merged_filtered), value = TRUE)
+padj_cols <- grep("^padj_", colnames(merged_filtered), value = TRUE)
+log2fc_mat <- as.matrix(merged_filtered[, log2fc_cols])
+padj_mat   <- as.matrix(merged_filtered[, padj_cols])
+
+# Prepare matrix for display: numbers only for padj < 0.05
+numbers_to_display <- ifelse(padj_mat < 0.05 & !is.na(log2fc_mat), round(log2fc_mat, 2), "")
+
+# Relabel columns for clarity and build annotation data frame
+treatment_labels <- gsub("^log2FC_", "", colnames(log2fc_mat))
+treatment_labels <- gsub("sym", "Symbiotic_", treatment_labels)
+treatment_labels <- gsub("apo", "Aposymbiotic_", treatment_labels)
+treatment_labels <- gsub("Hnit", "Heat+Nitrate", treatment_labels)
+treatment_labels <- gsub("heat", "Heat", treatment_labels)
+treatment_labels <- gsub("nit", "Nitrate", treatment_labels)
+colnames(log2fc_mat) <- treatment_labels
+colnames(numbers_to_display) <- treatment_labels
+
+col_ann <- data.frame(
+  state = ifelse(grepl("^Aposymbiotic", colnames(log2fc_mat)), "Aposymbiotic", "Symbiotic"),
+  Treatment = gsub(".*_(.*)$", "\\1", colnames(log2fc_mat)),
+  row.names = colnames(log2fc_mat)
+)
+col_ann$Treatment[col_ann$Treatment == "Nit"] <- "Nitrate"  # Fix abbreviation
+
+# Define colors for annotations
+ann_colors <- list(
+  state = c(Symbiotic = "#8B4513", Aposymbiotic = "gray40"),
+  Treatment = c(Nitrate = "#556B2F", Heat = "coral1", `Heat+Nitrate` = "#D65278")
+)
+
+# Order: Aposymbiotic first, then Symbiotic; within each, Nit, Heat, Heat+Nit
+desired_treatment_order <- c("Nitrate", "Heat", "Heat+Nitrate")
+ordered_idx <- order(
+  factor(col_ann$state, levels = c("Aposymbiotic", "Symbiotic")),
+  factor(col_ann$Treatment, levels = desired_treatment_order)
+)
+log2fc_mat <- log2fc_mat[, ordered_idx]
+numbers_to_display <- numbers_to_display[, ordered_idx]
+col_ann <- col_ann[ordered_idx, , drop = FALSE]
+
+# Heatmap color scale and breaks
+col <- colorRampPalette(brewer.pal(11, "RdBu"))(100)
+breaks <- seq(-1.5, 1.5, length.out = 101)
+rownames(merged_filtered) <- make.unique(cell_cycle_genes$Gene_name)
+# Plot the heatmap (remove y-axis/row labels)
+pdf("symbiosis_heatmap_v3.pdf", height = 1.5, width = 3.9)
+pheatmap(
+  log2fc_mat,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  scale = "none",
+  color = rev(col),
+  breaks = breaks,
+  na_col = "white",
+  display_numbers = numbers_to_display,
+  fontsize_row = 8,
+  fontsize_col = 10,
+  fontsize_number = 4,
+  number_color = "white",
+  annotation_col = col_ann,
+  annotation_colors = ann_colors,
+  labels_col = NA,
+  border_color      = "black"
+)
+dev.off()
+```
+
+```{r}
+library(dplyr)
+library(pheatmap)
+library(RColorBrewer)
+
+# --- Read rlog counts ---
+rlog_counts <- read.csv("AIP_rlog_transformed_counts.csv", stringsAsFactors = FALSE)
+rownames(rlog_counts) <- rlog_counts$Gene
+rlog_counts$Gene <- NULL
+rlog_mat <- as.matrix(rlog_counts)
+
+# --- Read genes of interest ---
+cell_cycle_genes <- read.csv("genes_in_moduleof_interest/cell_cycle_dge.csv", stringsAsFactors = FALSE)
+gene_ids <- cell_cycle_genes$Gene
+
+# --- Filter + reorder to match your gene list, rename rows ---
+expr_filtered <- rlog_mat[rownames(rlog_mat) %in% gene_ids, , drop = FALSE]
+expr_filtered <- expr_filtered[match(gene_ids, rownames(expr_filtered)), , drop = FALSE]
+rownames(expr_filtered) <- cell_cycle_genes$Gene_name
+
+# --- Read sample metadata/coding key ---
+sample_meta <- read.csv("sample_name_ALL_fin_2025.csv", stringsAsFactors = FALSE)
+# Inspect it first:
+# str(sample_meta)
+# head(sample_meta)
+
+# ASSUMPTION (adjust once file is seen): sample_meta has columns like
+#   sample_id, state (Aposymbiotic/Symbiotic), Treatment (Control/Nitrate/Heat/Heat+Nitrate)
+
+# Make sure sample_meta rows are ordered/matched to expr_filtered columns
+sample_meta <- sample_meta[match(colnames(expr_filtered), sample_meta$sample), ]
+
+col_ann_full <- data.frame(
+  state = sample_meta$state,
+  Treatment = sample_meta$Treatment_1,
+  row.names = sample_meta$sample
+)
+
+# --- Annotation colors ---
+ann_colors <- list(
+  Treatment = c(Control = "#4292c6", Nitrate = "#556B2F", Heat = "coral1", `Heat+Nitrate` = "#D65278")
+)
+
+desired_treatment_order <- c("Control", "Nitrate", "Heat", "Heat+Nitrate")
+col <- colorRampPalette(brewer.pal(11, "RdBu"))(250)
+
+# --- Function to subset, order, and plot one state (Apo or Sym) ---
+plot_state_heatmap <- function(state_label, expr_mat, ann_full, out_file) {
+  keep <- rownames(ann_full)[ann_full$state == state_label]
+  expr_sub <- expr_mat[, keep, drop = FALSE]
+  ann_sub <- ann_full[keep, "Treatment", drop = FALSE]
+
+  ordered_idx <- order(factor(ann_sub$Treatment, levels = desired_treatment_order))
+  expr_sub <- expr_sub[, ordered_idx]
+  ann_sub <- ann_sub[ordered_idx, , drop = FALSE]
+
+  pdf(out_file, height = 3, width = 4.5)
+  pheatmap(
+    expr_sub,
+    scale = "row",
+    cluster_rows = FALSE,
+    cluster_cols = FALSE,
+    color = rev(col),
+    na_col = "white",
+    fontsize_row = 8,
+    fontsize_col = 6,
+    annotation_col = ann_sub,
+    annotation_colors = ann_colors,
+    border_color = NA,
+    main = state_label
+  )
+  dev.off()
+}
+
+table(col_ann_full$state)  # sanity check before plotting
+table(col_ann_full$Treatment)
+# --- Generate both heatmaps ---
+plot_state_heatmap("Aposymbiotic", expr_filtered, col_ann_full, "cell_cycle_heatmap_apo.pdf")
+plot_state_heatmap("Symbiotic",    expr_filtered, col_ann_full, "cell_cycle_heatmap_sym.pdf")
+```
+
+
+```{r}
+library(dplyr)
+library(pheatmap)
+library(RColorBrewer)
+
+# File names and treatments
+file_names <- c("symNit_stress.txt", "symHnit_stress.txt", "symHeat_stress.txt", 
+                "apoNit_stress.txt", "apoHnit_stress.txt", "apoHeat_stress.txt")
+treatment_names <- c("symNit", "symHnit", "symHeat", "apoNit", "apoHnit", "apoHeat")
+
+# Read & merge DGE files
+dfs <- lapply(seq_along(file_names), function(i) {
+  df <- read.delim(file_names[i], header = TRUE, stringsAsFactors = FALSE)[, c("Gene", "log2FoldChange", "padj")]
+  colnames(df)[2:3] <- paste0(c("log2FC_", "padj_"), treatment_names[i])
+  df
+})
+merged <- Reduce(function(x, y) full_join(x, y, by = "Gene"), dfs)
+
+# Read genes of interest and filter
+cell_cycle_genes <- read.csv("Symbiosis_genes2.csv", stringsAsFactors = FALSE)
+gene_ids <- cell_cycle_genes$Gene
+merged_filtered <- merged %>% filter(Gene %in% gene_ids)
+merged_filtered <- merged_filtered[match(gene_ids, merged_filtered$Gene), ]
+
+# Make unique rownames from Gene_name column
+rownames(merged_filtered) <- make.unique(cell_cycle_genes$Gene_name)
+
+# Extract log2FC and padj matrices
+log2fc_cols <- grep("^log2FC_", colnames(merged_filtered), value = TRUE)
+padj_cols <- grep("^padj_", colnames(merged_filtered), value = TRUE)
+log2fc_mat <- as.matrix(merged_filtered[, log2fc_cols])
+padj_mat   <- as.matrix(merged_filtered[, padj_cols])
+
+# Prepare numbers to display on heatmap: only log2FC where padj < 0.05, else blank
+numbers_to_display <- ifelse(padj_mat < 0.05 & !is.na(log2fc_mat), round(log2fc_mat, 2), "")
+
+# Relabel columns for clarity and build annotation data frame
+treatment_labels <- gsub("^log2FC_", "", colnames(log2fc_mat))
+treatment_labels <- gsub("sym", "Symbiotic_", treatment_labels)
+treatment_labels <- gsub("apo", "Aposymbiotic_", treatment_labels)
+treatment_labels <- gsub("Hnit", "Heat+Nitrate", treatment_labels)
+treatment_labels <- gsub("heat", "Heat", treatment_labels)
+treatment_labels <- gsub("nit", "Nitrate", treatment_labels)
+colnames(log2fc_mat) <- treatment_labels
+colnames(numbers_to_display) <- treatment_labels
+
+col_ann <- data.frame(
+  state = ifelse(grepl("^Aposymbiotic", colnames(log2fc_mat)), "Aposymbiotic", "Symbiotic"),
+  Treatment = gsub(".*_(.*)$", "\\1", colnames(log2fc_mat)),
+  row.names = colnames(log2fc_mat)
+)
+col_ann$Treatment[col_ann$Treatment == "Nit"] <- "Nitrate"  # Fix abbreviation
+
+# Define colors for annotations
+ann_colors <- list(
+  state = c(Symbiotic = "#8B4513", Aposymbiotic = "gray40"),
+  Treatment = c(Nitrate = "#556B2F", Heat = "coral1", `Heat+Nitrate` = "#D65278")
+)
+
+# Order columns: Aposymbiotic first, then Symbiotic; within each, Nitrate, Heat, Heat+Nitrate
+desired_treatment_order <- c("Nitrate", "Heat", "Heat+Nitrate")
+ordered_idx <- order(
+  factor(col_ann$state, levels = c("Aposymbiotic", "Symbiotic")),
+  factor(col_ann$Treatment, levels = desired_treatment_order)
+)
+log2fc_mat <- log2fc_mat[, ordered_idx]
+numbers_to_display <- numbers_to_display[, ordered_idx]
+col_ann <- col_ann[ordered_idx, , drop = FALSE]
+
+# Heatmap color scale and breaks
+col <- colorRampPalette(brewer.pal(11, "RdBu"))(100)
+breaks <- seq(-1.5, 1.5, length.out = 101)
+
+# Plot the heatmap with gene names as row labels
+pdf("symbiosis_heatmap_v3.pdf", height = 1.5, width = 3.9)
+pheatmap(
+  log2fc_mat,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  scale = "none",
+  color = rev(col),
+  breaks = breaks,
+  na_col = "white",
+  display_numbers = numbers_to_display,
+  fontsize_row = 8,
+  fontsize_col = 10,
+  fontsize_number = 4,
+  number_color = "white",
+  annotation_col = col_ann,
+  annotation_colors = ann_colors,
+  labels_col = NULL,   # default column labels shown
+  labels_row = NULL,   # default row labels (gene names) shown
+  border_color = "black"
+)
+dev.off()
+```
+
+
+```{r}
+#pullout immune related
+# File names and treatments
+file_names <- c("symNit_stress.txt", "symHnit_stress.txt", "symHeat_stress.txt", 
+                "apoNit_stress.txt", "apoHnit_stress.txt", "apoHeat_stress.txt")
+treatment_names <- c("symNit", "symHnit", "symHeat", "apoNit", "apoHnit", "apoHeat")
+
+# Read & merge DGE files
+dfs <- lapply(seq_along(file_names), function(i) {
+  df <- read.delim(file_names[i], header = TRUE, stringsAsFactors = FALSE)[, c("Gene", "log2FoldChange", "padj")]
+  colnames(df)[2:3] <- paste0(c("log2FC_", "padj_"), treatment_names[i])
+  df
+})
+merged <- Reduce(function(x, y) full_join(x, y, by = "Gene"), dfs)
+# Read immune genes of interest and filter/align
+immune_genes <- read.csv("genes_in_moduleof_interest/immune_all_brown_module.csv", stringsAsFactors = FALSE)
+gene_ids <- immune_genes$Gene
+merged_filtered <- merged %>% filter(Gene %in% gene_ids)
+# Align merged_filtered to the order of gene_ids
+merged_filtered <- merged_filtered[match(gene_ids, merged_filtered$Gene), ]
+
+# Remove rows where Gene is NA (sometimes introduced by unmatched genes)
+merged_filtered <- merged_filtered[!is.na(merged_filtered$Gene), ]
+
+# Assign gene names as rownames, making sure there are no duplicates
+rownames(merged_filtered) <- make.unique(immune_genes$Gene_name[match(merged_filtered$Gene, immune_genes$Gene)])
+
+
+# Extract log2FC and padj matrices
+log2fc_cols <- grep("^log2FC_", colnames(merged_filtered), value = TRUE)
+padj_cols <- grep("^padj_", colnames(merged_filtered), value = TRUE)
+log2fc_mat <- as.matrix(merged_filtered[, log2fc_cols])
+padj_mat   <- as.matrix(merged_filtered[, padj_cols])
+
+# Matrix for display: numbers only for padj < 0.05
+numbers_to_display <- ifelse(padj_mat < 0.05 & !is.na(log2fc_mat), round(log2fc_mat, 2), "")
+
+# Relabel columns for clarity and build annotation data frame
+treatment_labels <- gsub("^log2FC_", "", colnames(log2fc_mat))
+treatment_labels <- gsub("sym", "Symbiotic_", treatment_labels)
+treatment_labels <- gsub("apo", "Aposymbiotic_", treatment_labels)
+treatment_labels <- gsub("Hnit", "Heat+Nitrate", treatment_labels)
+treatment_labels <- gsub("heat", "Heat", treatment_labels)
+treatment_labels <- gsub("nit", "Nitrate", treatment_labels)
+colnames(log2fc_mat) <- treatment_labels
+colnames(numbers_to_display) <- treatment_labels
+
+col_ann <- data.frame(
+  state = ifelse(grepl("^Aposymbiotic", colnames(log2fc_mat)), "Aposymbiotic", "Symbiotic"),
+  Treatment = gsub(".*_(.*)$", "\\1", colnames(log2fc_mat)),
+  row.names = colnames(log2fc_mat)
+)
+col_ann$Treatment[col_ann$Treatment == "Nit"] <- "Nitrate"  # Fix abbreviation
+
+# Define colors for annotations
+ann_colors <- list(
+  state = c(Symbiotic = "#8B4513", Aposymbiotic = "gray40"),
+  Treatment = c(Nitrate = "#556B2F", Heat = "coral1", `Heat+Nitrate` = "#D65278")
+)
+
+# Order columns: Aposymbiotic first, then Symbiotic; within each, Nit, Heat, Heat+Nit
+desired_treatment_order <- c("Nitrate", "Heat", "Heat+Nitrate")
+ordered_idx <- order(
+  factor(col_ann$state, levels = c("Aposymbiotic", "Symbiotic")),
+  factor(col_ann$Treatment, levels = desired_treatment_order)
+)
+log2fc_mat <- log2fc_mat[, ordered_idx]
+numbers_to_display <- numbers_to_display[, ordered_idx]
+col_ann <- col_ann[ordered_idx, , drop = FALSE]
+
+# Heatmap color scale and breaks
+col <- colorRampPalette(brewer.pal(11, "RdBu"))(100)
+breaks <- seq(-1.5, 1.5, length.out = 101)
+
+# Remove columns named NA or that are all NA (just in case)
+keep_cols <- !is.na(colnames(log2fc_mat)) & colnames(log2fc_mat) != "" & !apply(log2fc_mat, 2, function(x) all(is.na(x)))
+log2fc_mat <- log2fc_mat[, keep_cols]
+numbers_to_display <- numbers_to_display[, keep_cols]
+col_ann <- col_ann[keep_cols, , drop = FALSE]
+
+#gene_list <- read.csv("genes_in_moduleof_interest/Immune_megaenta_module2025.csv", header = TRUE, stringsAsFactors = FALSE)
+
+gene_list <- c(
+ "NFKB1", "TRAF3", "MAP3K7", "TRAF6", "MYD88_TLR", "AP1G1", "JUN", "MAP2K7", "MAP4K4",
+ "DDX4", "MALT1", "CSNK1A1", "CSNK1G2", "CSNK1E", "MYC", "MYCBPAP", "mycbp", "CREB1",
+"ACVR1", "CUL1", "DNM1L", "RPS6KA5", "BCL3", "CASP7", "IFIH1", "PIN1", "RNF31",
+ "TRPM2", "GRB2", "DAXX", "FGFR4", "FGFR2", "FGF7", "FGF20", "FGF18", "MAP3K13",
+ "MAP3K2", "MAP3K20", "MAPK7", "MKNK1", "PLA2G4A", "PRKCA", "RASA1", "TAOK1", "Tie",
+ "STAT5B", "CALM3"
+)
+genes_present <- intersect(gene_list, rownames(log2fc_mat))
+log2fc_mat_sub <- log2fc_mat[genes_present, , drop = FALSE]
+numbers_to_display_sub <- numbers_to_display[genes_present, , drop = FALSE]
+
+```
+
+```{r}
+pdf("immune_heatmap.pdf", height = 1.5, width = 3.9)
+pheatmap(
+  log2fc_mat_sub,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  scale = "none",
+  color = rev(col),
+  breaks = breaks,
+  na_col = "white",
+  display_numbers = numbers_to_display_sub,
+ fontsize_row = 8,
+  fontsize_col = 10,
+  fontsize_number = 4,
+  number_color = "white",
+  annotation_col = col_ann,
+  annotation_colors = ann_colors,
+  labels_col = NA,
+  border_color      = "black"
+)
+dev.off()
+```
+
+```{r}
+# --- Read rlog counts ---
+rlog_counts <- read.csv("AIP_rlog_transformed_counts.csv", stringsAsFactors = FALSE)
+rownames(rlog_counts) <- rlog_counts$Gene
+rlog_counts$Gene <- NULL
+rlog_mat <- as.matrix(rlog_counts)
+
+# --- Read immune module gene list (maps Gene ID <-> Gene_name) ---
+immune_genes <- read.csv("genes_in_moduleof_interest/immune_all_brown_module.csv", stringsAsFactors = FALSE)
+
+# --- Specific immune genes of interest (gene symbols) ---
+gene_list <- c(
+  "NFKB1", "TRAF3", "MAP3K7", "TRAF6", "MYD88_TLR", "AP1G1", "JUN", "MAP2K7", "MAP4K4",
+  "DDX4", "MALT1", "CSNK1A1", "CSNK1G2", "CSNK1E", "MYC", "MYCBPAP", "mycbp", "CREB1",
+  "ACVR1", "CUL1", "DNM1L", "RPS6KA5", "BCL3", "CASP7", "IFIH1", "PIN1", "RNF31",
+  "TRPM2", "GRB2", "DAXX", "FGFR4", "FGFR2", "FGF7", "FGF20", "FGF18", "MAP3K13",
+  "MAP3K2", "MAP3K20", "MAPK7", "MKNK1", "PLA2G4A", "PRKCA", "RASA1", "TAOK1", "Tie",
+  "STAT5B", "CALM3"
+)
+
+# --- Restrict module table to just these genes, preserving gene_list order ---
+immune_sub <- immune_genes %>% filter(Gene_name %in% gene_list)
+immune_sub <- immune_sub[match(gene_list, immune_sub$Gene_name), ]
+immune_sub <- immune_sub[!is.na(immune_sub$Gene), ]   # drop any not found in the module file
+
+gene_ids <- immune_sub$Gene
+
+# --- Filter + reorder rlog matrix to match gene_list, rename rows to gene symbols ---
+expr_filtered <- rlog_mat[rownames(rlog_mat) %in% gene_ids, , drop = FALSE]
+expr_filtered <- expr_filtered[match(gene_ids, rownames(expr_filtered)), , drop = FALSE]
+rownames(expr_filtered) <- make.unique(immune_sub$Gene_name[match(rownames(expr_filtered), immune_sub$Gene)])
+
+# --- Read sample metadata/coding key ---
+sample_meta <- read.csv("sample_name_ALL_fin_2025.csv", stringsAsFactors = FALSE)
+sample_meta <- sample_meta[match(colnames(expr_filtered), sample_meta$sample), ]
+
+col_ann_full <- data.frame(
+  state = sample_meta$state,
+  Treatment = sample_meta$Treatment_1,
+  row.names = sample_meta$sample
+)
+
+# Strip redundant apo_/sym_ prefix from Treatment
+col_ann_full$Treatment <- gsub("^apo_|^sym_", "", col_ann_full$Treatment)
+
+# Relabel to full display names
+col_ann_full$Treatment <- recode(col_ann_full$Treatment,
+  "Cont" = "Control",
+  "Nit"  = "Nitrate",
+  "Heat" = "Heat",
+  "Hnit" = "Heat+Nitrate"
+)
+
+# --- Annotation colors ---
+ann_colors <- list(
+  Treatment = c(Control = "#4292c6", Nitrate = "#556B2F", Heat = "coral1", `Heat+Nitrate` = "#D65278")
+)
+
+desired_treatment_order <- c("Control", "Nitrate", "Heat", "Heat+Nitrate")
+col <- colorRampPalette(brewer.pal(11, "RdBu"))(250)
+
+# --- Function to subset, order, and plot one state (Apo or Sym) ---
+plot_state_heatmap <- function(state_label, expr_mat, ann_full, out_file) {
+  keep <- rownames(ann_full)[ann_full$state == state_label]
+  expr_sub <- expr_mat[, keep, drop = FALSE]
+  ann_sub <- ann_full[keep, "Treatment", drop = FALSE]
+
+  ordered_idx <- order(factor(ann_sub$Treatment, levels = desired_treatment_order))
+  expr_sub <- expr_sub[, ordered_idx]
+  ann_sub <- ann_sub[ordered_idx, , drop = FALSE]
+
+  pdf(out_file, height = 3, width = 4.5)
+  pheatmap(
+    expr_sub,
+    scale = "row",
+    cluster_rows = FALSE,
+    cluster_cols = FALSE,
+    color = rev(col),
+    na_col = "white",
+    fontsize_row = 8,
+    fontsize_col = 6,
+    annotation_col = ann_sub,
+    annotation_colors = ann_colors,
+    border_color = NA,
+    main = state_label
+  )
+  dev.off()
+}
+
+table(col_ann_full$state)      # sanity check
+table(col_ann_full$Treatment)  # sanity check
+
+# --- Generate both heatmaps ---
+plot_state_heatmap("Aposymbiotic", expr_filtered, col_ann_full, "immune_heatmap_apo.pdf")
+plot_state_heatmap("Symbiotic",    expr_filtered, col_ann_full, "immune_heatmap_sym.pdf")
+```
+
+
+```{r}
+# Read your gene list (with both Gene and Gene_name columns)
+heat_gene_df <- read.csv("~/Desktop/Heat_genes.csv", stringsAsFactors = FALSE)
+
+# Filter and clean merged data
+merged_filtered <- merged %>% filter(Gene %in% heat_gene_df$Gene)
+merged_filtered <- merged_filtered[!is.na(merged_filtered$Gene), ]
+merged_filtered <- merged_filtered[!is.na(merged_filtered[[1]]), ]
+
+# Set rownames as gene names (in file order and unique if repeated)
+rownames(merged_filtered) <- make.unique(heat_gene_df$Gene_name[match(merged_filtered$Gene, heat_gene_df$Gene)])
+
+# Proceed with matrix extraction, annotation, etc.
+
+log2fc_cols <- grep("^log2FC_", colnames(merged_filtered), value = TRUE)
+padj_cols   <- grep("^padj_",   colnames(merged_filtered), value = TRUE)
+log2fc_mat  <- as.matrix(merged_filtered[, log2fc_cols])
+padj_mat    <- as.matrix(merged_filtered[, padj_cols])
+numbers_to_display <- ifelse(padj_mat < 0.05 & !is.na(log2fc_mat), round(log2fc_mat, 2), "")
+
+# Relabel columns for clarity and build annotation data frame
+treatment_labels <- gsub("^log2FC_", "", colnames(log2fc_mat))
+treatment_labels <- gsub("sym", "Symbiotic_", treatment_labels)
+treatment_labels <- gsub("apo", "Aposymbiotic_", treatment_labels)
+treatment_labels <- gsub("Hnit", "Heat+Nitrate", treatment_labels)
+treatment_labels <- gsub("heat", "Heat", treatment_labels)
+treatment_labels <- gsub("nit", "Nitrate", treatment_labels)
+colnames(log2fc_mat) <- treatment_labels
+colnames(numbers_to_display) <- treatment_labels
+
+col_ann <- data.frame(
+  state = ifelse(grepl("^Aposymbiotic", colnames(log2fc_mat)), "Aposymbiotic", "Symbiotic"),
+  Treatment = gsub(".*_(.*)$", "\\1", colnames(log2fc_mat)),
+  row.names = colnames(log2fc_mat)
+)
+col_ann$Treatment[col_ann$Treatment == "Nit"] <- "Nitrate"
+
+# Define annotation colors
+ann_colors <- list(
+  state = c(Symbiotic = "#8B4513", Aposymbiotic = "gray40"),
+  Treatment = c(Nitrate = "#556B2F", Heat = "coral1", `Heat+Nitrate` = "#D65278")
+)
+
+# Order columns: Aposymbiotic first, then Symbiotic; within each, Nit, Heat, Heat+Nit
+desired_treatment_order <- c("Nitrate", "Heat", "Heat+Nitrate")
+
+ordered_idx <- order(
+  factor(col_ann$state, levels = c("Aposymbiotic", "Symbiotic")),
+  factor(col_ann$Treatment, levels = desired_treatment_order)
+)
+log2fc_mat <- log2fc_mat[, ordered_idx]
+numbers_to_display <- numbers_to_display[, ordered_idx]
+col_ann <- col_ann[ordered_idx, , drop = FALSE]
+
+# Heatmap color scale and breaks
+col <- colorRampPalette(brewer.pal(11, "RdBu"))(100)
+breaks <- seq(-1.5, 1.5, length.out = 101)
+
+# Remove columns named NA or that are all NA (just in case)
+keep_cols <- !is.na(colnames(log2fc_mat)) & colnames(log2fc_mat) != "" & !apply(log2fc_mat, 2, function(x) all(is.na(x)))
+log2fc_mat <- log2fc_mat[, keep_cols]
+numbers_to_display <- numbers_to_display[, keep_cols]
+col_ann <- col_ann[keep_cols, , drop = FALSE]
+# Assign gene names (or gene IDs) as rownames if you haven't already
+if ("Gene_name" %in% colnames(merged_filtered)) {
+  rownames(merged_filtered) <- make.unique(merged_filtered$Gene_name)
+} else {
+  rownames(merged_filtered) <- make.unique(merged_filtered$Gene)
+}
+write.csv(merged_filtered, file = "log2fc_mat.csv", row.names = TRUE)
+
+# Plot with gene_name shown on y-axis
+pdf("heat_stress_heatmap.pdf",height = 1.8, width = 3.9)
+pheatmap(
+  log2fc_mat,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  scale = "none",
+  color = rev(col),
+  breaks = breaks,
+  na_col = "white",
+  display_numbers = numbers_to_display,
+ fontsize_row = 8,
+  fontsize_col = 10,
+  fontsize_number = 4,
+  number_color = "white",
+  annotation_col = col_ann,
+  annotation_colors = ann_colors,
+  labels_col = NA,
+  border_color      = "black"
+)
+dev.off()
+```
+
+```{r}
+# Read your gene list (with both Gene and Gene_name columns)
+sym_gene_df <- read.csv("genes_in_moduleof_interest/Symbiosis_genes2.csv", stringsAsFactors = FALSE)
+
+# Filter and clean merged data
+merged_filtered <- merged %>% filter(Gene %in% sym_gene_df$Gene)
+merged_filtered <- merged_filtered[!is.na(merged_filtered$Gene), ]
+merged_filtered <- merged_filtered[!is.na(merged_filtered[[1]]), ]
+
+# Set rownames as gene names (in file order and unique if repeated)
+rownames(merged_filtered) <- make.unique(sym_gene_df$Gene_name[match(merged_filtered$Gene, sym_gene_df$Gene)])
+
+# Proceed with matrix extraction, annotation, etc.
+
+log2fc_cols <- grep("^log2FC_", colnames(merged_filtered), value = TRUE)
+padj_cols   <- grep("^padj_",   colnames(merged_filtered), value = TRUE)
+log2fc_mat  <- as.matrix(merged_filtered[, log2fc_cols])
+padj_mat    <- as.matrix(merged_filtered[, padj_cols])
+numbers_to_display <- ifelse(padj_mat < 0.05 & !is.na(log2fc_mat), round(log2fc_mat, 2), "")
+
+# Relabel columns for clarity and build annotation data frame
+treatment_labels <- gsub("^log2FC_", "", colnames(log2fc_mat))
+treatment_labels <- gsub("sym", "Symbiotic_", treatment_labels)
+treatment_labels <- gsub("apo", "Aposymbiotic_", treatment_labels)
+treatment_labels <- gsub("Hnit", "Heat+Nitrate", treatment_labels)
+treatment_labels <- gsub("heat", "Heat", treatment_labels)
+treatment_labels <- gsub("nit", "Nitrate", treatment_labels)
+colnames(log2fc_mat) <- treatment_labels
+colnames(numbers_to_display) <- treatment_labels
+
+col_ann <- data.frame(
+  state = ifelse(grepl("^Aposymbiotic", colnames(log2fc_mat)), "Aposymbiotic", "Symbiotic"),
+  Treatment = gsub(".*_(.*)$", "\\1", colnames(log2fc_mat)),
+  row.names = colnames(log2fc_mat)
+)
+col_ann$Treatment[col_ann$Treatment == "Nit"] <- "Nitrate"
+
+# Define annotation colors
+ann_colors <- list(
+  state = c(Symbiotic = "#8B4513", Aposymbiotic = "gray40"),
+  Treatment = c(Nitrate = "#556B2F", Heat = "coral1", `Heat+Nitrate` = "#D65278")
+)
+
+# Order columns: Aposymbiotic first, then Symbiotic; within each, Nit, Heat, Heat+Nit
+desired_treatment_order <- c("Nitrate", "Heat", "Heat+Nitrate")
+
+ordered_idx <- order(
+  factor(col_ann$state, levels = c("Aposymbiotic", "Symbiotic")),
+  factor(col_ann$Treatment, levels = desired_treatment_order)
+)
+log2fc_mat <- log2fc_mat[, ordered_idx]
+numbers_to_display <- numbers_to_display[, ordered_idx]
+col_ann <- col_ann[ordered_idx, , drop = FALSE]
+
+# Heatmap color scale and breaks
+col <- colorRampPalette(brewer.pal(11, "RdBu"))(100)
+breaks <- seq(-1.5, 1.5, length.out = 101)
+
+# Remove columns named NA or that are all NA (just in case)
+keep_cols <- !is.na(colnames(log2fc_mat)) & colnames(log2fc_mat) != "" & !apply(log2fc_mat, 2, function(x) all(is.na(x)))
+log2fc_mat <- log2fc_mat[, keep_cols]
+numbers_to_display <- numbers_to_display[, keep_cols]
+col_ann <- col_ann[keep_cols, , drop = FALSE]
+# Assign gene names (or gene IDs) as rownames if you haven't already
+if ("Gene_name" %in% colnames(merged_filtered)) {
+  rownames(merged_filtered) <- make.unique(merged_filtered$Gene_name)
+} else {
+  rownames(merged_filtered) <- make.unique(merged_filtered$Gene)
+}
+
+# Plot with gene_name shown on y-axis
+pdf("symbiosis_stress_heatmap.pdf",height = 2, width = 3.9)
+pheatmap(
+  log2fc_mat,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  scale = "none",
+  color = rev(col),
+  breaks = breaks,
+  na_col = "white",
+  display_numbers = numbers_to_display,
+ fontsize_row = 8,
+  fontsize_col = 10,
+  fontsize_number = 4,
+  number_color = "white",
+  annotation_col = col_ann,
+  annotation_colors = ann_colors,
+  labels_col = NA,
+  border_color      = "black"
+)
+dev.off()
+```
+
+```{r}
+# redo same steps for Figure 3
+# Set working directory (update as needed)
+setwd("~/Desktop/Aiptasia_Immuno_figures2025/DGE_results")
+
+# File names and treatments
+file_names <- c("symNit_stress.txt", "symHnit_stress.txt", "symHeat_stress.txt", 
+                "apoNit_stress.txt", "apoHnit_stress.txt", "apoHeat_stress.txt")
+treatment_names <- c("symNit", "symHnit", "symHeat", "apoNit", "apoHnit", "apoHeat")
+
+# Read & merge DGE files
+dfs <- lapply(seq_along(file_names), function(i) {
+  df <- read.delim(file_names[i], header = TRUE, stringsAsFactors = FALSE)[, c("Gene", "log2FoldChange", "padj")]
+  colnames(df)[2:3] <- paste0(c("log2FC_", "padj_"), treatment_names[i])
+  df
+})
+merged <- Reduce(function(x, y) full_join(x, y, by = "Gene"), dfs)
+
+#Read your gene list (with both Gene and Gene_name columns)
+ER_gene_df <- read.csv("~/Desktop/ER_black_module_DGE.csv", stringsAsFactors = FALSE)
+
+# Filter and clean merged data
+merged_filtered <- merged %>% filter(Gene %in% ER_gene_df$Gene)
+merged_filtered <- merged_filtered[!is.na(merged_filtered$Gene), ]
+merged_filtered <- merged_filtered[!is.na(merged_filtered[[1]]), ]
+
+# Set rownames as gene names (in file order and unique if repeated)
+rownames(merged_filtered) <- make.unique(ER_gene_df$Gene_name[match(merged_filtered$Gene, ER_gene_df$Gene)])
+
+# Proceed with matrix extraction, annotation, etc.
+
+log2fc_cols <- grep("^log2FC_", colnames(merged_filtered), value = TRUE)
+padj_cols   <- grep("^padj_",   colnames(merged_filtered), value = TRUE)
+log2fc_mat  <- as.matrix(merged_filtered[, log2fc_cols])
+padj_mat    <- as.matrix(merged_filtered[, padj_cols])
+numbers_to_display <- ifelse(padj_mat < 0.05 & !is.na(log2fc_mat), round(log2fc_mat, 2), "")
+
+# Relabel columns for clarity and build annotation data frame
+treatment_labels <- gsub("^log2FC_", "", colnames(log2fc_mat))
+treatment_labels <- gsub("sym", "Symbiotic_", treatment_labels)
+treatment_labels <- gsub("apo", "Aposymbiotic_", treatment_labels)
+treatment_labels <- gsub("Hnit", "Heat+Nitrate", treatment_labels)
+treatment_labels <- gsub("heat", "Heat", treatment_labels)
+treatment_labels <- gsub("nit", "Nitrate", treatment_labels)
+colnames(log2fc_mat) <- treatment_labels
+colnames(numbers_to_display) <- treatment_labels
+
+col_ann <- data.frame(
+  state = ifelse(grepl("^Aposymbiotic", colnames(log2fc_mat)), "Aposymbiotic", "Symbiotic"),
+  Treatment = gsub(".*_(.*)$", "\\1", colnames(log2fc_mat)),
+  row.names = colnames(log2fc_mat)
+)
+col_ann$Treatment[col_ann$Treatment == "Nit"] <- "Nitrate"
+
+# Define annotation colors
+ann_colors <- list(
+  state = c(Symbiotic = "#8B4513", Aposymbiotic = "gray40"),
+  Treatment = c(Nitrate = "#556B2F", Heat = "coral1", `Heat+Nitrate` = "#D65278")
+)
+
+# Order columns: Aposymbiotic first, then Symbiotic; within each, Nit, Heat, Heat+Nit
+desired_treatment_order <- c("Nitrate", "Heat", "Heat+Nitrate")
+
+ordered_idx <- order(
+  factor(col_ann$state, levels = c("Aposymbiotic", "Symbiotic")),
+  factor(col_ann$Treatment, levels = desired_treatment_order)
+)
+log2fc_mat <- log2fc_mat[, ordered_idx]
+numbers_to_display <- numbers_to_display[, ordered_idx]
+col_ann <- col_ann[ordered_idx, , drop = FALSE]
+
+# Heatmap color scale and breaks
+col <- colorRampPalette(brewer.pal(11, "RdBu"))(100)
+breaks <- seq(-1.5, 1.5, length.out = 101)
+
+# Remove columns named NA or that are all NA (just in case)
+keep_cols <- !is.na(colnames(log2fc_mat)) & colnames(log2fc_mat) != "" & !apply(log2fc_mat, 2, function(x) all(is.na(x)))
+log2fc_mat <- log2fc_mat[, keep_cols]
+numbers_to_display <- numbers_to_display[, keep_cols]
+col_ann <- col_ann[keep_cols, , drop = FALSE]
+# Assign gene names (or gene IDs) as rownames if you haven't already
+if ("Gene_name" %in% colnames(merged_filtered)) {
+  rownames(merged_filtered) <- make.unique(merged_filtered$Gene_name)
+} else {
+  rownames(merged_filtered) <- make.unique(merged_filtered$Gene)
+}
+
+# Plot with gene_name shown on y-axis
+pdf("ER_stress_heatmap.pdf",height = 2.5, width = 3.9)
+pheatmap(
+  log2fc_mat,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  scale = "none",
+  color = rev(col),
+  breaks = breaks,
+  na_col = "white",
+  display_numbers = numbers_to_display,
+ fontsize_row = 8,
+  fontsize_col = 10,
+  fontsize_number = 4,
+  number_color = "white",
+  annotation_col = col_ann,
+  annotation_colors = ann_colors,
+  labels_col = NA,
+  border_color      = "black"
+)
+dev.off()
+```
+
+```{r}
+#Read your gene list (with both Gene and Gene_name columns)
+NER_gene_df <- read.csv("~/Desktop/NER_black_module_DGE.csv", stringsAsFactors = FALSE)
+
+# Filter and clean merged data
+merged_filtered <- merged %>% filter(Gene %in% NER_gene_df$Gene)
+merged_filtered <- merged_filtered[!is.na(merged_filtered$Gene), ]
+merged_filtered <- merged_filtered[!is.na(merged_filtered[[1]]), ]
+
+# Set rownames as gene names (in file order and unique if repeated)
+rownames(merged_filtered) <- make.unique(NER_gene_df$Gene_name[match(merged_filtered$Gene, NER_gene_df$Gene)])
+
+# Proceed with matrix extraction, annotation, etc.
+
+log2fc_cols <- grep("^log2FC_", colnames(merged_filtered), value = TRUE)
+padj_cols   <- grep("^padj_",   colnames(merged_filtered), value = TRUE)
+log2fc_mat  <- as.matrix(merged_filtered[, log2fc_cols])
+padj_mat    <- as.matrix(merged_filtered[, padj_cols])
+numbers_to_display <- ifelse(padj_mat < 0.05 & !is.na(log2fc_mat), round(log2fc_mat, 2), "")
+
+# Relabel columns for clarity and build annotation data frame
+treatment_labels <- gsub("^log2FC_", "", colnames(log2fc_mat))
+treatment_labels <- gsub("sym", "Symbiotic_", treatment_labels)
+treatment_labels <- gsub("apo", "Aposymbiotic_", treatment_labels)
+treatment_labels <- gsub("Hnit", "Heat+Nitrate", treatment_labels)
+treatment_labels <- gsub("heat", "Heat", treatment_labels)
+treatment_labels <- gsub("nit", "Nitrate", treatment_labels)
+colnames(log2fc_mat) <- treatment_labels
+colnames(numbers_to_display) <- treatment_labels
+
+col_ann <- data.frame(
+  state = ifelse(grepl("^Aposymbiotic", colnames(log2fc_mat)), "Aposymbiotic", "Symbiotic"),
+  Treatment = gsub(".*_(.*)$", "\\1", colnames(log2fc_mat)),
+  row.names = colnames(log2fc_mat)
+)
+col_ann$Treatment[col_ann$Treatment == "Nit"] <- "Nitrate"
+
+# Define annotation colors
+ann_colors <- list(
+  state = c(Symbiotic = "#8B4513", Aposymbiotic = "gray40"),
+  Treatment = c(Nitrate = "#556B2F", Heat = "coral1", `Heat+Nitrate` = "#D65278")
+)
+
+# Order columns: Aposymbiotic first, then Symbiotic; within each, Nit, Heat, Heat+Nit
+desired_treatment_order <- c("Nitrate", "Heat", "Heat+Nitrate")
+
+ordered_idx <- order(
+  factor(col_ann$state, levels = c("Aposymbiotic", "Symbiotic")),
+  factor(col_ann$Treatment, levels = desired_treatment_order)
+)
+log2fc_mat <- log2fc_mat[, ordered_idx]
+numbers_to_display <- numbers_to_display[, ordered_idx]
+col_ann <- col_ann[ordered_idx, , drop = FALSE]
+
+# Heatmap color scale and breaks
+col <- colorRampPalette(brewer.pal(11, "RdBu"))(100)
+breaks <- seq(-1.5, 1.5, length.out = 101)
+
+# Remove columns named NA or that are all NA (just in case)
+keep_cols <- !is.na(colnames(log2fc_mat)) & colnames(log2fc_mat) != "" & !apply(log2fc_mat, 2, function(x) all(is.na(x)))
+log2fc_mat <- log2fc_mat[, keep_cols]
+numbers_to_display <- numbers_to_display[, keep_cols]
+col_ann <- col_ann[keep_cols, , drop = FALSE]
+# Assign gene names (or gene IDs) as rownames if you haven't already
+if ("Gene_name" %in% colnames(merged_filtered)) {
+  rownames(merged_filtered) <- make.unique(merged_filtered$Gene_name)
+} else {
+  rownames(merged_filtered) <- make.unique(merged_filtered$Gene)
+}
+
+# Plot with gene_name shown on y-axis
+pdf("NER_stress_heatmap.pdf",height = 2, width = 3.9)
+pheatmap(
+  log2fc_mat,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  scale = "none",
+  color = rev(col),
+  breaks = breaks,
+  na_col = "white",
+  display_numbers = numbers_to_display,
+ fontsize_row = 8,
+  fontsize_col = 10,
+  fontsize_number = 4,
+  number_color = "white",
+  annotation_col = col_ann,
+  annotation_colors = ann_colors,
+  labels_col = NA,
+  border_color      = "black"
+)
+dev.off()
+```
+```{r}
+#Read your gene list (with both Gene and Gene_name columns)
+DSBR_gene_df <- read.csv("~/Desktop/DSBR_black_module_DGE.csv", stringsAsFactors = FALSE)
+
+# Filter and clean merged data
+merged_filtered <- merged %>% filter(Gene %in% DSBR_gene_df$Gene)
+merged_filtered <- merged_filtered[!is.na(merged_filtered$Gene), ]
+merged_filtered <- merged_filtered[!is.na(merged_filtered[[1]]), ]
+
+# Set rownames as gene names (in file order and unique if repeated)
+rownames(merged_filtered) <- make.unique(DSBR_gene_df$Gene_name[match(merged_filtered$Gene, DSBR_gene_df$Gene)])
+
+# Proceed with matrix extraction, annotation, etc.
+
+log2fc_cols <- grep("^log2FC_", colnames(merged_filtered), value = TRUE)
+padj_cols   <- grep("^padj_",   colnames(merged_filtered), value = TRUE)
+log2fc_mat  <- as.matrix(merged_filtered[, log2fc_cols])
+padj_mat    <- as.matrix(merged_filtered[, padj_cols])
+numbers_to_display <- ifelse(padj_mat < 0.05 & !is.na(log2fc_mat), round(log2fc_mat, 2), "")
+
+# Relabel columns for clarity and build annotation data frame
+treatment_labels <- gsub("^log2FC_", "", colnames(log2fc_mat))
+treatment_labels <- gsub("sym", "Symbiotic_", treatment_labels)
+treatment_labels <- gsub("apo", "Aposymbiotic_", treatment_labels)
+treatment_labels <- gsub("Hnit", "Heat+Nitrate", treatment_labels)
+treatment_labels <- gsub("heat", "Heat", treatment_labels)
+treatment_labels <- gsub("nit", "Nitrate", treatment_labels)
+colnames(log2fc_mat) <- treatment_labels
+colnames(numbers_to_display) <- treatment_labels
+
+col_ann <- data.frame(
+  state = ifelse(grepl("^Aposymbiotic", colnames(log2fc_mat)), "Aposymbiotic", "Symbiotic"),
+  Treatment = gsub(".*_(.*)$", "\\1", colnames(log2fc_mat)),
+  row.names = colnames(log2fc_mat)
+)
+col_ann$Treatment[col_ann$Treatment == "Nit"] <- "Nitrate"
+
+# Define annotation colors
+ann_colors <- list(
+  state = c(Symbiotic = "#8B4513", Aposymbiotic = "gray40"),
+  Treatment = c(Nitrate = "#556B2F", Heat = "coral1", `Heat+Nitrate` = "#D65278")
+)
+
+# Order columns: Aposymbiotic first, then Symbiotic; within each, Nit, Heat, Heat+Nit
+desired_treatment_order <- c("Nitrate", "Heat", "Heat+Nitrate")
+
+ordered_idx <- order(
+  factor(col_ann$state, levels = c("Aposymbiotic", "Symbiotic")),
+  factor(col_ann$Treatment, levels = desired_treatment_order)
+)
+log2fc_mat <- log2fc_mat[, ordered_idx]
+numbers_to_display <- numbers_to_display[, ordered_idx]
+col_ann <- col_ann[ordered_idx, , drop = FALSE]
+
+# Heatmap color scale and breaks
+col <- colorRampPalette(brewer.pal(11, "RdBu"))(100)
+breaks <- seq(-1.5, 1.5, length.out = 101)
+
+# Remove columns named NA or that are all NA (just in case)
+keep_cols <- !is.na(colnames(log2fc_mat)) & colnames(log2fc_mat) != "" & !apply(log2fc_mat, 2, function(x) all(is.na(x)))
+log2fc_mat <- log2fc_mat[, keep_cols]
+numbers_to_display <- numbers_to_display[, keep_cols]
+col_ann <- col_ann[keep_cols, , drop = FALSE]
+# Assign gene names (or gene IDs) as rownames if you haven't already
+if ("Gene_name" %in% colnames(merged_filtered)) {
+  rownames(merged_filtered) <- make.unique(merged_filtered$Gene_name)
+} else {
+  rownames(merged_filtered) <- make.unique(merged_filtered$Gene)
+}
+
+# Plot with gene_name shown on y-axis
+pdf("DSBR_stress_heatmap.pdf",height = 2, width = 3.9)
+pheatmap(
+  log2fc_mat,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  scale = "none",
+  color = rev(col),
+  breaks = breaks,
+  na_col = "white",
+  display_numbers = numbers_to_display,
+ fontsize_row = 8,
+  fontsize_col = 10,
+  fontsize_number = 4,
+  number_color = "white",
+  annotation_col = col_ann,
+  annotation_colors = ann_colors,
+  labels_col = NA,
+  border_color      = "black"
+)
+dev.off()
+```
+
+```{r}
+#plot data for ROS response go. GO:0000302
+gene_annots<-read.csv("~/Desktop/Aiptasia_Immuno_figures2025/DGE_results/Aiptasia_gene_annotation.csv", stringsAsFactors = FALSE)
+# Create new data frame with only rows containing GO:0000302
+go_0000302_df <- gene_annots[grepl("GO:0000302", gene_annots$GO_terms), ]
+
+# View the result
+go_0000302_df
+# Save the filtered data frame to a CSV file
+#write.csv(go_0000302_df, file = "~/Desktop/GO_0000302_genes.csv", row.names = FALSE)
+```
+
+```{r}
+#pullout oxidative stress gene CATA, GPX1, PRDX5, SODC/SODM, PARK7, TRX1, TRXR2, SHC1, ROMO1, NOS1
+# File names and treatments
+file_names <- c("symNit_stress.txt", "symHnit_stress.txt", "symHeat_stress.txt", 
+                "apoNit_stress.txt", "apoHnit_stress.txt", "apoHeat_stress.txt")
+treatment_names <- c("symNit", "symHnit", "symHeat", "apoNit", "apoHnit", "apoHeat")
+
+# Read & merge DGE files
+dfs <- lapply(seq_along(file_names), function(i) {
+  df <- read.delim(file_names[i], header = TRUE, stringsAsFactors = FALSE)[, c("Gene", "log2FoldChange", "padj")]
+  colnames(df)[2:3] <- paste0(c("log2FC_", "padj_"), treatment_names[i])
+  df
+})
+merged <- Reduce(function(x, y) full_join(x, y, by = "Gene"), dfs)
+gene_list <- read.csv("~/Desktop/GO_0000302_genes_v1.csv", header = TRUE, stringsAsFactors = FALSE)
+
+genes <- c(
+  "GPX1", "PRDX5", "SODC","SODM", "PARK7", "TRX1", "TRXR2","ROMO1"
+)
+
+ros<-subset(gene_list, Gene_name %in% genes)
+
+# Filter and clean merged data
+merged_filtered <- merged %>% filter(Gene %in% ros$Gene)
+
+# Remove rows where Gene is NA (sometimes introduced by unmatched genes)
+merged_filtered <- merged_filtered[!is.na(merged_filtered$Gene), ]
+
+# Assign gene names as rownames, making sure there are no duplicates
+rownames(merged_filtered) <- make.unique(ros$Gene_name[match(merged_filtered$Gene, ros$Gene)])
+
+
+# Extract log2FC and padj matrices
+log2fc_cols <- grep("^log2FC_", colnames(merged_filtered), value = TRUE)
+padj_cols <- grep("^padj_", colnames(merged_filtered), value = TRUE)
+log2fc_mat <- as.matrix(merged_filtered[, log2fc_cols])
+padj_mat   <- as.matrix(merged_filtered[, padj_cols])
+
+# Matrix for display: numbers only for padj < 0.05
+numbers_to_display <- ifelse(padj_mat < 0.05 & !is.na(log2fc_mat), round(log2fc_mat, 2), "")
+
+# Relabel columns for clarity and build annotation data frame
+treatment_labels <- gsub("^log2FC_", "", colnames(log2fc_mat))
+treatment_labels <- gsub("sym", "Symbiotic_", treatment_labels)
+treatment_labels <- gsub("apo", "Aposymbiotic_", treatment_labels)
+treatment_labels <- gsub("Hnit", "Heat+Nitrate", treatment_labels)
+treatment_labels <- gsub("heat", "Heat", treatment_labels)
+treatment_labels <- gsub("nit", "Nitrate", treatment_labels)
+colnames(log2fc_mat) <- treatment_labels
+colnames(numbers_to_display) <- treatment_labels
+
+col_ann <- data.frame(
+  state = ifelse(grepl("^Aposymbiotic", colnames(log2fc_mat)), "Aposymbiotic", "Symbiotic"),
+  Treatment = gsub(".*_(.*)$", "\\1", colnames(log2fc_mat)),
+  row.names = colnames(log2fc_mat)
+)
+col_ann$Treatment[col_ann$Treatment == "Nit"] <- "Nitrate"
+
+# Define annotation colors
+ann_colors <- list(
+  state = c(Symbiotic = "#8B4513", Aposymbiotic = "gray40"),
+  Treatment = c(Nitrate = "#556B2F", Heat = "coral1", `Heat+Nitrate` = "#D65278")
+)
+
+# Order columns: Aposymbiotic first, then Symbiotic; within each, Nit, Heat, Heat+Nit
+desired_treatment_order <- c("Nitrate", "Heat", "Heat+Nitrate")
+
+ordered_idx <- order(
+  factor(col_ann$state, levels = c("Aposymbiotic", "Symbiotic")),
+  factor(col_ann$Treatment, levels = desired_treatment_order)
+)
+log2fc_mat <- log2fc_mat[, ordered_idx]
+numbers_to_display <- numbers_to_display[, ordered_idx]
+col_ann <- col_ann[ordered_idx, , drop = FALSE]
+
+# Heatmap color scale and breaks
+col <- colorRampPalette(brewer.pal(11, "RdBu"))(100)
+breaks <- seq(-1.5, 1.5, length.out = 101)
+
+# Remove columns named NA or that are all NA (just in case)
+keep_cols <- !is.na(colnames(log2fc_mat)) & colnames(log2fc_mat) != "" & !apply(log2fc_mat, 2, function(x) all(is.na(x)))
+log2fc_mat <- log2fc_mat[, keep_cols]
+numbers_to_display <- numbers_to_display[, keep_cols]
+col_ann <- col_ann[keep_cols, , drop = FALSE]
+# Assign gene names (or gene IDs) as rownames if you haven't already
+if ("Gene_name" %in% colnames(merged_filtered)) {
+  rownames(merged_filtered) <- make.unique(merged_filtered$Gene_name)
+} else {
+  rownames(merged_filtered) <- make.unique(merged_filtered$Gene)
+}
+
+# Plot with gene_name shown on y-axis
+pdf("ROS_stress_heatmap.pdf",height = 2, width = 3.9)
+pheatmap(
+  log2fc_mat,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  scale = "none",
+  color = rev(col),
+  breaks = breaks,
+  na_col = "white",
+  display_numbers = numbers_to_display,
+ fontsize_row = 8,
+  fontsize_col = 10,
+  fontsize_number = 4,
+  number_color = "white",
+  annotation_col = col_ann,
+  annotation_colors = ann_colors,
+  labels_col = NA,
+  border_color      = "black"
+)
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+

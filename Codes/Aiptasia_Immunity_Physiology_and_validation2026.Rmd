@@ -1,0 +1,958 @@
+---
+title: "Aiptasia_relative_change_data"
+author: "JK"
+date: "3/9/2024"
+output: html_document
+---
+
+```{r Load libraries}
+
+library(emmeans)
+library(ggplot2)
+library(dplyr)
+library(broom)
+library(car)
+library(performance)
+library(scales)
+library(plotrix)
+library(multcomp)
+library(gridExtra)
+library(ggplot2)
+library(ellipse)
+library(factoextra)
+library(vegan)
+library(MCMC.OTU)
+library(ggpubr)
+library(emmeans)
+library(multcomp)
+library(ggplot2)
+
+```
+
+
+```{r}
+setwd("~/Desktop/Aiptasia_reanalyisis2024/")
+# Load the data
+data<-read.csv("Immune_data_2023_final.csv", header = TRUE)
+str(data)
+```
+
+```{r}
+# Calculate average control values of Phenoloxidase..U.mg., totProt,CarbsPerMgProt,PerActivity..μmoles.min.mg.protein. for each treatment of strain and symbiotic state
+str(data)
+control_avg <- aggregate(cbind(Phenoloxidase, totProt,CarbsPerMgProt,PerActivity) ~ Treatment + Strain + State, data = data[data$Treatment == "Control", ], mean)
+```
+
+```{r}
+# Merge the average values with the original data matrix
+data <- merge(data, control_avg, by = c("Strain", "State"), suffixes = c("", "_avg"))
+```
+
+```{r}
+# Calculate relative change for each treatment relative to control average
+data$Relative_Change_Phenoloxidase <- (data$Phenoloxidase- data$Phenoloxidase_avg) / data$Phenoloxidase_avg
+data$Relative_Change_totProt <- (data$totProt - data$totProt_avg) / data$totProt_avg
+data$Relative_Change_CarbsPerMgProt <- (data$CarbsPerMgProt - data$CarbsPerMgProt_avg) / data$CarbsPerMgProt_avg
+data$Relative_Change_PerActivity <- (data$PerActivity - data$PerActivity_avg) / data$PerActivity_avg
+data_baseline<-filter(data, Treatment=="Control")
+# Rearrange the order of Treatment levels
+data$Treatment <- factor(data$Treatment, levels = c("Control","Nitrate","Heat","Heat+Nitrate"))
+
+```
+
+```{r}
+#Assign colors and shapes
+#shapes
+shapes = c("VWB" = 21, "CC7" = 22, "H2"= 24)
+#colors for treatment
+colvec<- c("Control" = "#4292c6", "Nitrate" = "#556B2F","Heat" = "coral1","Heat+Nitrate" = "#D65278")
+#Brown: CE8451
+#Pink: D65278
+#Green:307253
+#Gray:9FA6A9
+#green "#556B2F"
+#colors for baseline apo and sym
+col<-c("gray40","#8B4513")
+```
+
+```{r}
+str(data_baseline)
+#check significance of physiology and immune enzymes of apo and sym.
+#Plot baseline total protein
+library(Rmisc)
+base_prot_se <- summarySE(data_baseline, measurevar="totProt", groupvars=c("State"))
+base_prot<-ggplot(data_baseline,(aes(x=State ,y=totProt,col=State, fill=State,group=State, shape=Strain)))+ 
+    geom_boxplot(fill="NA",lwd=1.25,alpha = 0.2,outlier.shape = NA)+
+    geom_jitter(size=4.5,width = 0.35, alpha=0.8)+
+    scale_fill_manual(values=col)+scale_color_manual(values=col)+
+    theme_classic()+ 
+  theme_classic()+ ylab("Prot")+
+  scale_shape_manual(values = shapes)+ theme(legend.position = "none")
+base_prot
+base_carbs<-ggplot(data_baseline,(aes(x=State ,y=CarbsPerMgProt,col=State, fill=State,group=State, shape=Strain)))+ 
+    geom_boxplot(fill="NA",lwd=1.25,alpha = 0.2,outlier.shape = NA)+
+    geom_jitter(size=4.5,width = 0.35, alpha=0.8)+
+    scale_fill_manual(values=col)+scale_color_manual(values=col)+
+    theme_classic()+  ylab("Carbs")+scale_shape_manual(values = shapes)+ theme(legend.position = "none")
+base_carbs
+
+base_Pdx<-ggplot(data_baseline,(aes(x=State ,y=PerActivity,col=State, fill=State,group=State, shape=Strain)))+ 
+    geom_boxplot(fill="NA",lwd=1.25,alpha = 0.2,outlier.shape = NA)+
+    geom_jitter(size=4.5,width = 0.35, alpha=0.8)+
+    scale_fill_manual(values=col)+scale_color_manual(values=col)+
+    theme_classic()+ 
+  theme_classic()+ ylab("POX)")+
+  scale_shape_manual(values = shapes)+ theme(legend.position = "none")
+base_Pdx
+
+base_PO<-ggplot(data_baseline,(aes(x=State ,y=Phenoloxidase,col=State, fill=State,group=State, shape=Strain)))+ 
+    geom_boxplot(fill="NA",lwd=1.25,alpha = 0.2,outlier.shape = NA)+
+    geom_jitter(size=4.5,width = 0.35, alpha=0.8)+
+    scale_fill_manual(values=col)+scale_color_manual(values=col)+
+    theme_classic()+ 
+  theme_classic()+ ylab("PO")+
+  scale_shape_manual(values = shapes)+ theme(legend.position = "none")
+base_PO
+
+#construct PCAl plot of all baseline data
+# Extract numeric columns for PCA
+str(data_baseline)
+ #$ totProt                                : num  17.2 18.9 16.5 22.4 20.8 ...
+ #$ CellsPerMg                             : num  0 0 0 62341 59481 ...
+ #$ CarbsPerMgProt                         : num  0.01063 0.00966 0.0098 0.00815 0.01894 ...
+ #$ PerActivity..μmoles.min.mg.protein.    : num  116495 67317 83813 165238 186367 ...
+ #$ Phenoloxidase..U.mg.
+library(dplyr)
+data_baseline_log <- data_baseline %>%
+  dplyr::filter(complete.cases(.)) %>%
+  mutate_if(is.numeric, log) 
+
+# Convert matrix to data frame
+data_baseline_log <- as.data.frame(data_baseline_log)
+
+# Select specific columns by name
+data_baseline_log_pca <- data_baseline_log[, c("Strain", "State", "sample_id", "totProt", "CarbsPerMgProt", "PerActivity", "Phenoloxidase", "Treatment")]
+# re-name columns for legibility on plots
+colnames(data_baseline_log_pca)[colnames(data_baseline_log_pca)=="totProt"] <-"Prot"
+colnames(data_baseline_log_pca)[colnames(data_baseline_log_pca)=="CarbsPerMgProt"] <-"Carbs"
+colnames(data_baseline_log_pca)[colnames(data_baseline_log_pca)=="PerActivity"] <-"POX"
+colnames(data_baseline_log_pca)[colnames(data_baseline_log_pca)=="Phenoloxidase"] <-"PO"
+str(data_baseline_log_pca)
+
+# Perform PCA
+pca_result <- prcomp(data_baseline_log_pca[,4:7], scale.unit = TRUE, ncp = 10, graph = TRUE)
+# correlations variables - dimensions
+# Adding PCA results to the data frame
+data_baseline_log_pca$PC1 <- pca_result$x[, 1]
+data_baseline_log_pca$PC2 <- pca_result$x[, 2]
+
+# Get the summary of PCA
+summary_pca <- summary(pca_result)
+# Calculate the percentage of explained variance
+percentage_explained_variance <- summary_pca$sdev^2 / sum(summary_pca$sdev^2) * 100
+# Print or use the percentage of explained variance for each dimension
+print(percentage_explained_variance)
+# Create PCA biplot with factorextra
+
+adonis1<-adonis(pca_result$x~State*Strain,data=data_baseline, method = 'eu')
+head(adonis1$aov.tab)
+pca<-fviz_pca_biplot(pca_result, label = "var", col.var = "black", labelsize = 5, habillage =data_baseline$State, geom.ind = "point", col.ind = data_baseline$State,
+                              legend.title = "Strain", repel = FALSE,alpha.ind = 0) + geom_point(aes(shape=data_baseline$Strain,col= data_baseline$State,fill= data_baseline$State), size = 4, stroke = 1)+stat_ellipse(geom = "polygon", type = "t", alpha = 0.2, 
+              aes(fill= data_baseline$State))+scale_fill_manual(values = col)+scale_color_manual(values = col)+ scale_shape_manual(values = shapes)
+pca
+pca1<-pca + labs( x = "PC1 (73.16% explained variance)", #get this from output of fviz_eig() above
+           y = "PC2 (17.55% explained variance)") + #get this from output of fviz_eig() above
+  theme(legend.position = "bottom", axis.title = element_text(face = "bold")) 
+pca1
+base_plot1 <- grid.arrange(base_prot,base_carbs,base_Pdx,base_PO,ncol = 2,nrow=2)
+baseline<-ggarrange(base_plot1, pca1, widths = c(2,2))
+baseline
+ggsave("~/Desktop/Baseline.pdf",baseline, width =9.5, height = 5.5)
+```
+
+```{r Read Fv/Fm plot}
+
+nubs<-read.csv("Final_PAM_Data_Aug2023.csv")
+str(nubs)
+#Organize matrix, rename columns
+nubmeans <- nubs %>%
+  dplyr::group_by(treatment, Day, sym_state)
+data_bub <- nubmeans %>%
+  mutate(Symbio_state = ifelse(substr(sym_state, 1, 1) == "A", "Aposymbiotic", "Symbiotic"))
+data_bub <- data_bub %>%
+  mutate(Strain = case_when(substr(sym_state, 2, 2) == "C" ~ "CC7",
+                                substr(sym_state, 2, 2) == "H" ~ "H2",
+                                substr(sym_state, 2, 2) == "V" ~ "VWB",
+                                TRUE ~ "Unknown"))
+#greap all treament codes and make another column named Treat
+rename <- function(word) {
+  if (grepl("CC$", word)) {
+    return("Control")
+  } else if (grepl("CH$", word)) {
+    return("Heat")
+  } else if (grepl("NC$", word)) {
+    return("Nitrate")
+  } else if (grepl("NH$", word)) {
+    return("Heat+Nitrate")
+  } else {
+    return("gray")  # Default color for other words
+  }
+}
+data_bub$Treatment <- sapply(data_bub$treatment, rename)
+```
+
+```{r}
+#filter symbiotic aiptasia data
+str(data_bub)
+data_bub$Day<-as.factor(data_bub$Day)
+data_bub_FV_Fm<-filter(data_bub, Day== "10")
+# Rearrange the order of Treatment levels
+data_bub_FV_Fm$Treatment <- factor(data_bub_FV_Fm$Treatment, levels = c("Control","Nitrate","Heat","Heat+Nitrate"))
+fv_fm<-ggplot(data_bub_FV_Fm,(aes(x=Treatment ,y=FV_Fm,color=Treatment,fill=Treatment,group=Treatment,shape = Strain)))+ 
+  geom_jitter(size=1.5,width = 0.35, alpha=0.8)+
+  geom_boxplot(alpha=0.2,outlier.shape = NA )+scale_fill_manual(values=colvec)+
+  scale_color_manual(values=colvec)+ylab("Fv / Fm")+
+  scale_shape_manual(values = shapes)+
+  facet_wrap(~Symbio_state)+ theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ theme(legend.position = "none")
+fv_fm
+carbs<-ggplot(data,(aes(x=Treatment ,y=Relative_Change_CarbsPerMgProt,color=Treatment,fill=Treatment,group=Treatment,shape = Strain)))+ 
+  geom_jitter(size=1.5,width = 0.35, alpha=0.8)+
+  geom_boxplot(alpha=0.2,outlier.shape = NA)+scale_fill_manual(values=colvec)+
+  scale_color_manual(values=colvec)+ylab("Carbs")+
+  scale_shape_manual(values = shapes)+
+  facet_wrap(~State)+ theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ theme(legend.position = "none")
+carbs
+prot<-ggplot(data,(aes(x=Treatment ,y=Relative_Change_totProt,color=Treatment,fill=Treatment,group=Treatment,shape = Strain)))+ 
+  geom_jitter(size=1.5,width = 0.35, alpha=0.8)+
+  geom_boxplot(alpha=0.2,outlier.shape = NA )+scale_fill_manual(values=colvec)+
+  scale_color_manual(values=colvec)+ylab("Prot")+
+  scale_shape_manual(values = shapes)+
+  facet_wrap(~State)+ theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ theme(legend.position = "none")
+prot
+per<-ggplot(data,(aes(x=Treatment,y=Relative_Change_PerActivity,color=Treatment,fill=Treatment,group=Treatment,shape = Strain)))+ 
+  geom_jitter(size=1.5,width = 0.35, alpha=0.8)+
+  geom_boxplot(alpha=0.2,outlier.shape = NA)+scale_fill_manual(values=colvec)+
+  scale_color_manual(values=colvec)+ylab("POX")+
+  scale_shape_manual(values = shapes)+
+  facet_wrap(~State)+ theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ theme(legend.position = "none")
+per
+phen<-ggplot(data,(aes(x=Treatment ,y=Relative_Change_Phenoloxidase,color=Treatment,fill=Treatment,group=Treatment,shape = Strain)))+ 
+  geom_jitter(size=1.5,width = 0.35, alpha=0.8)+
+  geom_boxplot(alpha=0.2,outlier.shape = NA)+scale_fill_manual(values=colvec)+
+  scale_color_manual(values=colvec)+ylab("PO")+
+  scale_shape_manual(values = shapes)+
+  facet_wrap(~State)+ theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ theme(legend.position = "none")
+phen
+sym<-filter(data,State== "Symbiotic")
+algae<-ggplot(sym,(aes(x=Treatment ,y=CellsPerMg,color=Treatment,fill=Treatment,group=Treatment,shape = Strain)))+ 
+  geom_jitter(size=1.5,width = 0.35, alpha=0.8)+
+  geom_boxplot(alpha=0.2,outlier.shape = NA)+scale_fill_manual(values=colvec)+
+  scale_color_manual(values=colvec)+ylab("Algal density")+
+  scale_shape_manual(values = shapes)+ theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ theme(legend.position = "none")
+algae1<-algae + scale_y_continuous(labels = scales::label_scientific())
+algae1
+data_pca_log <- data %>%
+  dplyr::filter(complete.cases(.)) %>%
+  mutate(Relative_Change_Phenoloxidase_2 = Relative_Change_Phenoloxidase + 2) %>%
+  mutate(Relative_Change_totProt_2 = Relative_Change_totProt + 2) %>%
+  mutate(Relative_Change_CarbsPerMgProt_2 = Relative_Change_CarbsPerMgProt + 2) %>%
+  mutate(Relative_Change_PerActivity_2 = Relative_Change_PerActivity + 2) %>%
+  mutate_if(is.numeric, log) 
+
+# Convert matrix to data frame
+data_pca_log <- as.data.frame(data_pca_log)
+str(data_pca_log)
+# Select specific columns by name
+data_log_pca1 <- data_pca_log[, c("Strain","Treatment" ,"State", "sample_id", "Relative_Change_Phenoloxidase_2", "Relative_Change_totProt_2","Relative_Change_CarbsPerMgProt_2", "Relative_Change_PerActivity_2")]
+# re-name columns for legibility on plots
+colnames(data_log_pca1)[colnames(data_log_pca1)=="Relative_Change_totProt_2"] <-"Prot"
+colnames(data_log_pca1)[colnames(data_log_pca1)=="Relative_Change_CarbsPerMgProt_2"] <-"Carbs"
+colnames(data_log_pca1)[colnames(data_log_pca1)=="Relative_Change_PerActivity_2"] <-"POX"
+colnames(data_log_pca1)[colnames(data_log_pca1)=="Relative_Change_Phenoloxidase_2"] <-"PO"
+str(data_log_pca1)
+sym_pca<-filter(data_log_pca1, State=="Symbiotic")
+# Perform PCA
+pca_result_sym <- prcomp(sym_pca[,5:8], scale.unit = TRUE, ncp = 10, graph = TRUE)
+# correlations variables - dimensions
+# Adding PCA results to the data frame
+sym_pca$PC1 <- pca_result_sym$x[, 1]
+sym_pca$PC2 <- pca_result_sym$x[, 2]
+
+# Get the summary of PCA
+summary_pca_sym <- summary(pca_result_sym)
+# Calculate the percentage of explained variance
+percentage_explained_variance_sym <- summary_pca_sym$sdev^2 / sum(summary_pca_sym$sdev^2) * 100
+# Print or use the percentage of explained variance for each dimension
+print(percentage_explained_variance_sym)
+# Create PCA biplot with factorextra
+
+pca<-fviz_pca_biplot(pca_result_sym, label = "var", col.var = "black", labelsize = 5, habillage =sym_pca$Treatment, geom.ind = "point", col.ind = sym_pca$Treatment,
+                              legend.title = "Treatment", repel = FALSE,alpha.ind = 0) + geom_point(aes(shape=sym_pca$Strain,color=sym_pca$Treatment,fill= sym_pca$Treatment), size = 4, stroke = 1)+
+  stat_ellipse(geom = "polygon", type = "t", alpha = 0.15, 
+              aes(fill= sym_pca$Treatment, color=sym_pca$Treatment), show.legend = FALSE)+scale_color_manual(values = colvec, breaks=c("Control", "Nitrate","Heat","Heat+Nitrate"), name = "Treatment")+ scale_shape_manual(values = shapes, breaks = c("H2", "CC7", "VWB"), name = "Strain")+scale_fill_manual(values = colvec)
+pca
+pca_sym<-pca + labs( title ="Symbiotic",
+  x = "PC1 (57.47% explained variance)", #get this from output of fviz_eig() above
+           y = "PC2 (25.04% explained variance)") +
+   theme(legend.position = "bottom",plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(face = "bold"),
+        legend.title.align =  0.5, legend.text.align = 0,
+        legend.title = element_text(face = "bold")) 
+pca_sym
+#PCA apo
+apo_pca<-filter(data_log_pca1, State=="Aposymbiotic")
+# Perform PCA
+pca_result_apo <- prcomp(apo_pca[,5:8], scale.unit = TRUE, ncp = 10, graph = TRUE)
+# correlations variables - dimensions
+# Adding PCA results to the data frame
+apo_pca$PC1 <- pca_result_apo$x[, 1]
+apo_pca$PC2 <- pca_result_apo$x[, 2]
+
+# Get the summary of PCA
+summary_pca_apo <- summary(pca_result_apo)
+# Calculate the percentage of explained variance
+percentage_explained_variance_apo <- summary_pca_apo$sdev^2 / sum(summary_pca_apo$sdev^2) * 100
+# Print or use the percentage of explained variance for each dimension
+print(percentage_explained_variance_apo)
+# Create PCA biplot with factorextra
+
+pca_apo<-fviz_pca_biplot(pca_result_apo, label = "var", col.var = "black", labelsize = 5, habillage =apo_pca$Treatment, geom.ind = "point", col.ind = apo_pca$Treatment,
+                              legend.title = "Treatment", repel = FALSE,alpha.ind = 0) + geom_point(aes(shape=apo_pca$Strain,color=apo_pca$Treatment,fill= apo_pca$Treatment), size = 4, stroke = 1)+
+  stat_ellipse(geom = "polygon", type = "t", alpha = 0.15, 
+              aes(fill= apo_pca$Treatment, color=apo_pca$Treatment), show.legend = FALSE)+scale_color_manual(values = colvec, breaks=c("Control", "Nitrate","Heat","Heat+Nitrate"), name = "Treatment")+ scale_shape_manual(values = shapes, breaks = c("H2", "CC7", "VWB"), name = "Strain")+scale_fill_manual(values = colvec)
+pca_apo<-pca_apo + labs( title ="Apoymbiotic",
+  x = "PC1 (60.08% explained variance)", #get this from output of fviz_eig() above
+           y = "PC2 (23.90% explained variance)") +
+   theme(legend.position = "bottom",plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(face = "bold"),
+        legend.title.align =  0.5, legend.text.align = 0,
+        legend.title = element_text(face = "bold")) 
+pca_apo
+figure_treat<- grid.arrange(prot,carbs,per,phen,fv_fm,algae1,ncol = 2,nrow=3)
+ggsave("~/Desktop/Treatment_response.pdf",figure_treat, width =6, height = 8)
+figure_pca<- ggarrange(sym_pca, apo_pca)
+figure_pca<-grid.arrange(pca_sym,pca_apo, ncol = 1,nrow=2)
+ggsave("~/Desktop/Treatment_pca.pdf",figure_pca, width =4, height = 7.5)
+#color in illustrator: sym=8B4513, apo=666666
+```
+
+```{r}
+str(data)
+###Baseline protein significance###
+#test significance for Total protein
+# Fit the mixed-effects model
+m1 <- aov(totProt ~ State*Strain, data=data_baseline)
+summary(m1)
+check_normality(m1)
+Anova(m1)
+#pairwise of treatments within symbiotic state. This stats will be reported in the manuscript.
+res_m1<-lsmeans(m1, pairwise~State*State, adjust="tukey")
+sum_tot<-cld(res_m1)
+sum_tot
+#save summary report of stats as csv. the file contains significance comparison where different numbers within column groups mean significant difference.
+write.csv(sum_tot, "~/Desktop/totProt_summary_baseline_MS.csv", row.names = FALSE)
+# Get ALL summary report as data frame
+res_m1_df <- summary(res_m1)$contrasts
+# Save FULL lsmeans summary as CSV. this results go to the supplemental table.
+write.csv(res_m1_df, "~/Desktop/totProt_FULLsummary_baseline_MS.csv", row.names = FALSE)
+```
+
+```{r}
+str(data)
+###Baseline carbs significance###
+#test significance for Total protein
+# Fit the mixed-effects model
+m2 <- aov(CarbsPerMgProt ~ State*Strain, data=data_baseline)
+summary(m2)
+#carbs were n.s in apo and sym
+```
+```{r}
+str(data_baseline)
+###Baseline Peroxidase Activity significance###
+# Fit the mixed-effects model
+
+m3 <- aov(PerActivity ~ State*Strain, data=data_baseline)
+summary(m3)
+check_normality(m3)
+#Warning: Non-normality of residuals detected (p = 0.046). Data were non normal. normalized data using log (data + 1)
+data_baseline$PerActivity_log<-log(data_baseline$PerActivity + 2)
+m3 <- aov(PerActivity_log ~ State*Strain, data=data_baseline)
+summary(m3)
+check_normality(m3)
+#OK: residuals appear as normally distributed (p = 0.073).
+Anova(m3)
+#pairwise of treatments within symbiotic state. This stats will be reported in the manuscript.
+res_m3<-lsmeans(m3, pairwise~State*State, adjust="tukey")
+sum_per<-cld(res_m3)
+sum_per
+#save summary report of stats as csv. the file contains significance comparison where different numbers within column groups mean significant difference.
+write.csv(sum_per, "~/Desktop/per_summary_baseline_MS.csv", row.names = FALSE)
+# Get ALL summary report as data frame
+res_m3_df <- summary(res_m3)$contrasts
+res_m3_df
+# Save FULL lsmeans summary as CSV. this results go to the supplemental table.
+write.csv(res_m3_df, "~/Desktop/per_FULLsummary_baseline_MS.csv", row.names = FALSE)
+```
+
+```{r}
+str(data_baseline)
+###Baseline Phenoloxidase Activity significance###
+# Fit the mixed-effects model
+
+m4 <- aov(Phenoloxidase ~ State*Strain, data=data_baseline)
+summary(m4)
+check_normality(m4)
+#Warning: Non-normality of residuals detected (p = 0.046). Data were non normal. normalized data using log (data + 1)
+data_baseline$Phenoloxidase_log<-log(data_baseline$Phenoloxidase + 2)
+m4 <- aov(Phenoloxidase_log ~ State*Strain, data=data_baseline)
+summary(m4)
+check_normality(m4)
+#OK: residuals appear as normally distributed (p = 0.082).
+Anova(m4)
+#pairwise of treatments within symbiotic state. This stats will be reported in the manuscript.
+res_m4<-lsmeans(m4, pairwise~State*State, adjust="tukey")
+sum_po<-cld(res_m4)
+sum_po
+#save summary report of stats as csv. the file contains significance comparison where different numbers within column groups mean significant difference.
+write.csv(sum_po, "~/Desktop/po_summary_baseline_MS.csv", row.names = FALSE)
+# Get ALL summary report as data frame
+res_m4_df <- summary(res_m4)$contrasts
+res_m4_df
+# Save FULL lsmeans summary as CSV. this results go to the supplemental table.
+write.csv(res_m3_df, "~/Desktop/po_FULLsummary_baseline_MS.csv", row.names = FALSE)
+```
+
+```{r}
+# Convert matrix to data frame
+data_baseline <- as.data.frame(data_baseline)
+
+# Select specific columns by name
+data_baseline<- data_baseline[, c("Strain", "State", "sample_id", "totProt", "CarbsPerMgProt", "PerActivity", "Phenoloxidase", "Treatment")]
+# re-name columns for legibility on plots
+str(data_baseline)
+colnames(data_baseline)[colnames(data_baseline)=="totProt"] <-"Prot"
+colnames(data_baseline)[colnames(data_baseline)=="CarbsPerMgProt"] <-"Carbs"
+colnames(data_baseline)[colnames(data_baseline)=="PerActivity"] <-"POX"
+colnames(data_baseline)[colnames(data_baseline)=="Phenoloxidase"] <-"PO"
+
+str(data_baseline)
+
+# Perform PCA
+pca_result <- prcomp(data_baseline[,4:7], scale.unit = TRUE, ncp = 10, graph = TRUE)
+# correlations variables - dimensions
+# Adding PCA results to the data frame
+data_baseline$PC1 <- pca_result$x[, 1]
+data_baseline$PC2 <- pca_result$x[, 2]
+
+# Get the summary of PCA
+summary_pca <- summary(pca_result)
+# Calculate the percentage of explained variance
+percentage_explained_variance <- summary_pca$sdev^2 / sum(summary_pca$sdev^2) * 100
+# Print or use the percentage of explained variance for each dimension
+print(percentage_explained_variance)
+# Create PCA biplot with factorextra
+adonis1<-adonis(pca_result$x~State*Strain,data=data_baseline, method = 'eu')
+head(adonis1$aov.tab)
+```
+
+```{r}
+
+##response to treatments
+
+#test significance for Total protein
+# Fit the mixed-effects model
+m1 <- aov(Relative_Change_totProt ~ Treatment*Strain*State, data=data)
+summary(m1)
+check_normality(m1)
+Anova(m1)
+#pairwise of treatments within symbiotic state. This stats will be reported in the manuscript.
+res_m1<-lsmeans(m1, pairwise~Treatment|State, adjust="tukey")
+sum_tot<-cld(res_m1)
+write.csv(sum_tot, "~/Desktop/totProt_summary_MS.csv", row.names = FALSE)
+# Get summary as data frame
+res_m1_df <- summary(res_m1)$contrasts
+# Save lsmeans summary as CSV
+write.csv(res_m1_df, "~/Desktop/totProt_FULLsummary_MS.csv", row.names = FALSE)
+
+#pairwise of all treatments of strains and symbiotic state
+res_m1.5<-lsmeans(m1, pairwise~Treatment*State, adjust="tukey")
+sum_tot_all<-cld(res_m1.5)
+write.csv(sum_tot_all, "~/Desktop/sum_tot_all_comparisomn_summary.csv", row.names = FALSE)
+# Get summary as data frame
+res_m1.5_df <- summary(res_m1.5)$contrasts
+# Save lsmeans summary as CSV
+write.csv(res_m1.5_df, "~/Desktop/res_m1_df_totProt_ALLsummary.csv", row.names = FALSE)
+```
+
+```{r}
+#Assign colors and shapes
+#shapes
+shapes = c("VWB" = 21, "CC7" = 22, "H2"= 24)
+#colors for treatment
+colvec<- c("Control" = "#3690c0", "Nitrate" = "#556B2F","Heat" = "#fc9272","Heat+Nitrate" = "#D65278")
+#Brown: CE8451
+#Pink: D65278
+#Green:307253
+#Gray:9FA6A9
+#green "#556B2F"
+```
+
+```{r}
+prot<-ggplot(data,(aes(x=Treatment ,y=Relative_Change_totProt,color=Treatment,fill=Treatment,group=Treatment,shape = Strain)))+ 
+  geom_jitter(size=1.5,width = 0.35, alpha=0.8)+
+  geom_boxplot(alpha=0.2,outlier.shape = NA )+scale_fill_manual(values=colvec)+
+  scale_color_manual(values=colvec)+ylab("Relative change of Total Protein /
+  Average of Control")+
+  scale_shape_manual(values = shapes)+
+  facet_wrap(~State)+ theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+prot
+ggsave("~/Desktop/All_prot.pdf", prot, width =4, height = 3)
+```
+
+```{r}
+str(data)
+#test significance for Total protein
+# Fit the mixed-effects model
+sym<-filter(data, State=="Symbiotic")
+m2 <- aov(CarbsPerMgProt ~ Treatment*Strain, data=data)
+summary(m2)
+check_normality(m2)
+Anova(m2)
+```
+
+```{r}
+carbs<-ggplot(data,(aes(x=Treatment ,y=Relative_Change_CarbsPerMgProt,color=Treatment,fill=Treatment,group=Treatment,shape = Strain)))+ 
+  geom_jitter(size=1.5,width = 0.35, alpha=0.8)+
+  geom_boxplot(alpha=0.2)+scale_fill_manual(values=colvec)+
+  scale_color_manual(values=colvec)+ylab("Relative change of Carbs /
+  Average of Control")+
+  scale_shape_manual(values = shapes)+
+  facet_wrap(~State)+ theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+str(data)
+#test significance for Peroxidase activity
+# Fit the mixed-effects model
+sym<-filter(data, State=="Symbiotic")
+m3 <- aov(log(PerActivity..μmoles.min.mg.protein.) ~ Treatment*Strain, data=sym)
+summary(m3)
+check_normality(m3)
+Anova(m3)
+res_m3<-lsmeans(m3, pairwise~Treatment, adjust="tukey")
+summary(res_m3)
+cld(res_m3)
+
+str(data)
+#test significance for Peroxidase activity
+# Fit the mixed-effects model
+apo<-filter(data, State=="Aposymbiotic")
+m4 <- aov(PerActivity..μmoles.min.mg.protein. ~ Treatment*Strain, data=apo)
+summary(m4)
+check_normality(m4)
+Anova(m4)
+```
+
+```{r}
+str(data)
+shapes = c("VWB" = 21, "CC7" = 22, "H2"= 24)
+per<-ggplot(data,(aes(x=Treatment,y=Relative_Change_PerActivity,color=Treatment,fill=Treatment,group=Treatment,shape = Strain)))+ 
+  geom_jitter(size=1.5,width = 0.35, alpha=0.8)+
+  geom_boxplot(alpha=0.2)+scale_fill_manual(values=colvec)+
+  scale_color_manual(values=colvec)+ylab("Relative change of POX /
+  Average of Control")+
+  scale_shape_manual(values = shapes)+
+  facet_wrap(~State)+ theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+per
+ggsave("~/Desktop/All_per.pdf", per, width =4, height = 3)
+```
+
+```{r}
+#test significance for Phenoloxidase activity
+# Fit the mixed-effects model
+m5 <- aov(Phenoloxidase..U.mg. ~ Treatment*Strain*State, data=data)
+summary(m5)
+check_normality(m5)
+Anova(m5)
+res_m5<-lsmeans(m5, pairwise~Treatment*State, adjust="tukey")
+summary(res_m5)
+cld(res_m5)
+```
+
+```{r}
+phen<-ggplot(data,(aes(x=Treatment ,y=Relative_Change_Phenoloxidase,color=Treatment,fill=Treatment,group=Treatment,shape = Strain)))+ 
+  geom_jitter(size=1.5,width = 0.35, alpha=0.8)+
+  geom_boxplot(alpha=0.2)+scale_fill_manual(values=colvec)+
+  scale_color_manual(values=colvec)+ylab("Relative change of PO /
+  Average of Control")+
+  scale_shape_manual(values = shapes)+
+  facet_wrap(~State)+ theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+phen
+ggsave("~/Desktop/All_phen.pdf", phen, width =4, height = 3)
+```
+
+```{r}
+##Test for Algal density
+m6 <- lm(CellsPerMg ~ Treatment*Strain, data=sym)
+check_normality(m6)
+#OK: residuals appear as normally distributed (p = 0.940).
+summary(m6)
+# Calculate lsmeans and pairwise comparisons
+Anova(m6)
+res_m6<-lsmeans(m6, pairwise~Treatment, adjust="tukey")
+summary(res_m6)
+cld(res_m6)
+```
+
+```{r}
+algae<-ggplot(sym,(aes(x=Treatment ,y=CellsPerMg,color=Treatment,fill=Treatment,group=Treatment,shape = Strain)))+ 
+  geom_jitter(size=1.5,width = 0.35, alpha=0.8)+
+  geom_boxplot(alpha=0.2)+scale_fill_manual(values=colvec)+
+  scale_color_manual(values=colvec)+ylab("Algal density (Cell/mg protein)")+
+  scale_shape_manual(values = shapes)+ theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+algae1<-algae + scale_y_continuous(labels = scales::label_scientific())
+ggsave("~/Desktop/All_algae.pdf", algae1, width =4, height = 3)
+```
+
+```{r}
+all_control<-filter(data, Treatment=="Control")
+##Test for Peroxidase baseline
+m7 <- lm(PerActivity..μmoles.min.mg.protein.~ State+Strain, data=all_control)
+check_normality(m7)
+#OK: residuals appear as normally distributed (p = 0.402).
+summary(m7)
+# Calculate lsmeans and pairwise comparisons
+Anova(m7)
+res_m7<-lsmeans(m7, pairwise~State, adjust="tukey")
+summary(res_m7)
+cld(res_m7)
+
+m8 <- lm(Phenoloxidase..U.mg.~ State+Strain, data=all_control)
+check_normality(m8)
+#OK: residuals appear as normally distributed (p = 0.249).
+summary(m8)
+# Calculate lsmeans and pairwise comparisons
+Anova(m8)
+res_m8<-lsmeans(m8, pairwise~State, adjust="tukey")
+summary(res_m8)
+cld(res_m8)
+col<-c("gray40","#CC6600")
+pdx_base<-ggplot(all_control,(aes(x=State ,y=PerActivity..μmoles.min.mg.protein.,col=State, fill=State,group=State, shape=Strain)))+ 
+    geom_boxplot(alpha = 0.5)+
+    geom_jitter(size=2.5,width = 0.35, alpha=0.8)+
+    scale_fill_manual(values=col)+scale_color_manual(values=col)+
+    theme_classic()+ 
+  theme_classic()+ ylab("Peroxidase activity
+μmoles/min/mg.protein")+
+  scale_shape_manual(values = shapes)+ggtitle("Peroxidase activity")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))#+theme(legend.position = "none")#+facet_wrap(~State)#, scales = "free_y")#
+pdx_base 
+phen_base<-ggplot(all_control,(aes(x=State ,y=Phenoloxidase..U.mg.,col=State, fill=State,group=State,shape=Strain)))+ 
+    geom_boxplot(alpha = 0.5)+
+    geom_jitter(size=2.5,width = 0.35, alpha=0.8)+
+    scale_fill_manual(values=col)+scale_color_manual(values=col)+
+    theme_classic()+ ylab("Phenoloxidase activity
+U/mg.protein")+
+    scale_shape_manual(values = shapes)+ggtitle("Phenoloxidase activity")+
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))#+theme(legend.position = "none")#+facet_wrap(~State)#, scales = "free_y")#
+phen_base
+base_plot <- grid.arrange(pdx_base,phen_base, ncol = 2)
+ggsave("~/Desktop/Baseline.pdf",base_plot, width =8, height = 3)
+
+```
+
+
+```{r}
+prot<-ggplot(data,(aes(x=Treatment ,y=Relative_Change_totProt,color=Treatment,fill=Treatment,group=Treatment,shape = Strain)))+ 
+  geom_jitter(size=1.5,width = 0.35, alpha=0.8)+
+  geom_boxplot(alpha=0.2,outlier.shape = NA )+scale_fill_manual(values=colvec)+
+  scale_color_manual(values=colvec)+ylab("Relative change of Total Protein /
+  Average of Control")+
+  scale_shape_manual(values = shapes)+
+  facet_wrap(~State)+ theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ theme(legend.position = "none")
+prot
+carbs<-ggplot(data,(aes(x=Treatment ,y=Relative_Change_CarbsPerMgProt,color=Treatment,fill=Treatment,group=Treatment,shape = Strain)))+ 
+  geom_jitter(size=1.5,width = 0.35, alpha=0.8)+
+  geom_boxplot(alpha=0.2,outlier.shape = NA)+scale_fill_manual(values=colvec)+
+  scale_color_manual(values=colvec)+ylab("Relative change of Carbs /
+  Average of Control")+
+  scale_shape_manual(values = shapes)+
+  facet_wrap(~State)+ theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ theme(legend.position = "none")
+
+per<-ggplot(data,(aes(x=Treatment,y=Relative_Change_PerActivity,color=Treatment,fill=Treatment,group=Treatment,shape = Strain)))+ 
+  geom_jitter(size=1.5,width = 0.35, alpha=0.8)+
+  geom_boxplot(alpha=0.2,outlier.shape = NA)+scale_fill_manual(values=colvec)+
+  scale_color_manual(values=colvec)+ylab("Relative change of POX /
+  Average of Control")+
+  scale_shape_manual(values = shapes)+
+  facet_wrap(~State)+ theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ theme(legend.position = "none")
+per
+
+phen<-ggplot(data,(aes(x=Treatment ,y=Relative_Change_Phenoloxidase,color=Treatment,fill=Treatment,group=Treatment,shape = Strain)))+ 
+  geom_jitter(size=1.5,width = 0.35, alpha=0.8)+
+  geom_boxplot(alpha=0.2,outlier.shape = NA)+scale_fill_manual(values=colvec)+
+  scale_color_manual(values=colvec)+ylab("Relative change of PO /
+  Average of Control")+
+  scale_shape_manual(values = shapes)+
+  facet_wrap(~State)+ theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1))+ theme(legend.position = "none")
+phen
+
+#construct PCAl plot of all baseline data
+# Extract numeric columns for PCA
+str(data)
+ #$ totProt                                : num  17.2 18.9 16.5 22.4 20.8 ...
+ #$ CellsPerMg                             : num  0 0 0 62341 59481 ...
+ #$ CarbsPerMgProt                         : num  0.01063 0.00966 0.0098 0.00815 0.01894 ...
+ #$ PerActivity..μmoles.min.mg.protein.    : num  116495 67317 83813 165238 186367 ...
+ #$ Phenoloxidase..U.mg.
+data_sym<-filter(data, State=="Symbiotic")
+numeric_columns <- c("Relative_Change_totProt", "Relative_Change_CarbsPerMgProt", "Relative_Change_PerActivity", "Relative_Change_Phenoloxidase")
+numeric_data <- data_sym[numeric_columns]
+numeric_data
+# Perform PCA
+pca_result <- prcomp(numeric_data, scale = TRUE)
+
+# Adding PCA results to the data frame
+data_sym$PC1 <- pca_result$x[, 1]
+data_sym$PC2 <- pca_result$x[, 2]
+
+# Perform PCA
+pca_result <- prcomp(numeric_data, scale = TRUE)
+
+# Create PCA biplot with factorextra
+library(factoextra)
+pca_result
+library(vegan)
+library(MCMC.OTU)
+library(ggpubr)
+adonis1<-adonis(pca_result$x~Treatment*Strain,data=data_sym, method = 'eu')
+head(adonis1$aov.tab)
+pca<-fviz_pca_biplot(pca_result, label = "var", col.var = "black", labelsize = 5, habillage =data$Treatment, geom.ind = "point", col.ind = data$Treatment,
+                              legend.title = "Treatment", repel = FALSE,alpha.ind = 0) + geom_point(aes(shape=data$Strain), size = 4, stroke = 1)+
+  stat_ellipse(geom = "polygon", type = "t", alpha = 0.15, 
+              aes(fill= data$Treatment), show.legend = FALSE)+scale_color_manual(values = colvec, breaks=c("Control","Nitrate","Heat","Heat+Nitrate"), name = "Treatment")+ scale_shape_manual(values = shapes, breaks = c("H2", "CC7", "VWB"))+scale_fill_manual(values = colvec)#+facet_wrap(~data$State)
+pca
+
+pca1<-pca + labs(title = FALSE,
+           x = "PC1 (46.20% explained variance)", #get this from output of fviz_eig() above
+           y = "PC2 (24.20% explained variance)") + #get this from output of fviz_eig() above
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(face = "bold"),
+        legend.title.align =  0.5, legend.text.align = 0,
+        legend.title = element_text(face = "bold")) 
+base_plot1 <- grid.arrange(prot,carbs,phen,per,ncol = 2,nrow=2)
+baseline<-ggarrange(base_plot1, pca1, widths = c(2,2))
+baseline
+ggsave("~/Desktop/Treatments.pdf",baseline, width =12, height = 6)
+
+
+```
+
+```{r}
+#analyze western blot signal
+wes<-read.csv("~/Desktop/Current_Biology_MS2025/4_Western_blot/nfkb_quantification.csv")
+str(wes)
+```
+
+```{r}
+#Assign colors and shapes
+#shapes
+#shapes = c("VWB" = 21, "CC7" = 22, "H2"= 24)
+#colors for treatment
+colvec<- c("Control" = "#3690c0", "Nitrate" = "#556B2F","Heat" = "#fc9272","Heat+Nitrate" = "#D65278")
+#Brown: CE8451
+#Pink: D65278
+#Green:307253
+#Gray:9FA6A9
+#green "#556B2F"
+```
+
+```{r}
+#filter baseline nfkb level of apo and sym, then test for significance difference
+wes_control<-filter(wes, Treatment== "Control")
+# Rearrange the order of Treatment levels
+wes_control$Treatment <- factor(wes_control$Treatment, levels = c("Apo","sym"))
+wes_control$nfkb_baseline <- wes_control$Area_Nfkb/wes_control$Area_ponceau
+##Test for nfkb baseline
+wes_base<-lm(nfkb_baseline ~ State, data=wes_control)
+Anova(wes_base)
+#Anova Table (Type II tests)
+
+#Response: nfkb_baseline
+#          Sum Sq Df F value   Pr(>F)   
+#State     48.734  1  15.499 0.007652 **
+#Residuals 18.866  6 
+```
+```{r}
+col<-c("gray40","#CC6600")
+wes_bale_plot<-ggplot(wes_base,(aes(x=State ,y=nfkb_baseline,color=State,fill=State,group=State)))+ 
+  geom_jitter(size=1.5,width = 0.35, alpha=0.8)+
+  geom_boxplot(alpha=0.2,outlier.shape = NA )+scale_fill_manual(values=col)+
+  scale_color_manual(values=col)+ylab("NF-κB level")+
+  theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+wes_bale_plot
+ggsave("~/Desktop/Current_Biology_MS2025/4_Western_blot/NFKB_western_baseline.pdf", wes_bale_plot, width =4, height = 4)
+```
+
+```{r}
+#in this plot, all values were all relative to the averages to the control of each symbiotic state. 
+wes_nf<-ggplot(wes,(aes(x=Treatment ,y=nfkb.poncea,color=Treatment,fill=Treatment,group=Treatment)))+ 
+  geom_jitter(size=1.5,width = 0.35, alpha=0.8)+
+  geom_boxplot(alpha=0.2,outlier.shape = NA )+scale_fill_manual(values=colvec)+
+  scale_color_manual(values=colvec)+ylab("Relative intensity of NF-κB /
+  Ponceau")+
+  facet_wrap(~State)+ theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+wes_nf
+ggsave("~/Desktop/Aip_Immuno_CurrentBiology/4_Western_blot/NFKB_western.pdf", wes_nf, width =6, height = 4)
+```
+
+
+```{r}
+wes_lm<-lm(nfkb.poncea ~ Treatment*State, data=wes)
+Anova(wes_lm)
+#Treatment       479.88  2  20.570 2.241e-05 ***
+#State           612.69  1  52.527 9.713e-07 ***
+#Treatment:State 364.80  2  15.637 0.0001158 ***
+#Residuals       209.96 18                      
+#---
+#Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+#cld(res_m3)
+```
+```{r}
+emm<-emmeans(wes_lm,pairwise ~ Treatment|State, adjust = "tukey")
+emm
+```
+
+```{r}
+#separate apo and sy data
+wes_apo<-filter(wes, State=="Apo")
+wes_sym<-filter(wes, State=="Sym")
+wes_lm_apo<-lm(nfkb.poncea ~ Treatment, data=wes_apo)
+Anova(wes_lm_apo)
+#Treatment       479.88  2  20.570 2.241e-05 ***
+#State           612.69  1  52.527 9.713e-07 ***
+#Treatment:State 364.80  2  15.637 0.0001158 ***
+#Residuals       209.96 18                      
+#---
+#Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+#cld(res_m3)
+```
+```{r}
+emm_apo<-emmeans(wes_lm_apo,pairwise ~ Treatment, adjust = "tukey")
+emm_apo
+```
+
+```{r}
+#separate apo and sy data
+wes_sym<-filter(wes, State=="sym")
+wes_lm_sym<-lm(nfkb.poncea ~ Treatment, data=wes_sym)
+Anova(wes_lm_sym)
+#Anova Table (Type II tests)
+#
+#Response: nfkb.poncea
+#          Sum Sq Df F value    Pr(>F)    
+#Treatment 840.23  2   18.11 0.0006999 ***
+#Residuals 208.78  9                      
+#---
+#Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+```
+
+```{r}
+emm_sym<-emmeans(wes_lm_sym,pairwise ~ Treatment, adjust = "tukey")
+emm_sym
+```
+
+```{r}
+#analyze western blot signal
+edu<-read.csv("~/Desktop/Cell_cycle/EdU_data.csv")
+edu$SymTreatment<-paste(edu$SymState, edu$Treatment, sep="_")
+str(edu)
+```
+```{r}
+#Assign colors and shapes
+#shapes
+#shapes = c("VWB" = 21, "CC7" = 22, "H2"= 24)
+#colors for treatment
+colvec<- c("Control" = "#3690c0", "Nitrate" = "#556B2F","Heat" = "#fc9272","Heat+Nitrate" = "#D65278")
+#Brown: CE8451
+#Pink: D65278
+#Green:307253
+#Gray:9FA6A9
+#green "#556B2F"
+```
+
+```{r}
+edu_lm_sym<-lm(X.EDU.Nuclei ~ SymTreatment, data=edu)
+Anova(edu_lm_sym)
+#Anova Table (Type II tests)
+#Response: X.EDU.Nuclei
+#            Sum Sq Df F value    Pr(>F)    
+#SymTreatment 1916.5  3  29.452 1.027e-07 ***
+#Residuals     455.5 21                      
+#Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+```
+
+
+
+```{r}
+str(edu)
+#in this plot, all values were all relative to the averages to the control of each symbiotic state.
+wes_nf <- ggplot(edu, aes(x = SymTreatment, y = X.EDU.Nuclei, 
+                          color = Treatment, fill = Treatment, group = SymTreatment)) + 
+  geom_jitter(size = 2.5, width = 0.35, alpha = 0.8) +
+  geom_boxplot(alpha = 0.2, outlier.shape = NA) +
+  scale_fill_manual(values = colvec) +
+  scale_color_manual(values = colvec) +
+  ylab("EDU / Nuclei (%)") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+wes_nf
+ggsave("~/Desktop/Cell_cycle/EDU_data.pdf", wes_nf, width =5, height = 4)
+```
+
+```{r}
+emm_edu<-emmeans(edu_lm_sym,pairwise ~ SymTreatment, adjust = "tukey")
+emm_edu
+#contrast                         estimate   SE df t.ratio p.value
+# apo_Control - Sym_Control          -15.83 2.92 21  -5.422  0.0001
+# apo_Control - Sym_Heat               7.16 2.92 21   2.453  0.0976
+# apo_Control - (Sym_Heat+Nitrate)    -2.07 2.92 21  -0.710  0.8921
+# Sym_Control - Sym_Heat              22.99 2.49 21   9.234  <.0001
+# Sym_Control - (Sym_Heat+Nitrate)    13.76 2.49 21   5.526  0.0001
+# Sym_Heat - (Sym_Heat+Nitrate)       -9.23 2.49 21  -3.708  0.0066
+cld_result <- cld(emm_edu, alpha = 0.05, Letters = letters, adjust = "tukey")
+
+# View the letters
+cld_result
+```
+
+
+```{r}
+# This shows which groups share letters (same letter = not significantly different)
+
+# Add letters to the plot
+wes_nf <- ggplot(edu, aes(x = SymTreatment, y = X.EDU.Nuclei, 
+                          color = Treatment, fill = Treatment)) + 
+  geom_boxplot(alpha = 0.2, outlier.shape = NA) +
+  geom_jitter(size = 2.5, width = 0.35, alpha = 0.8) +
+  scale_fill_manual(values = colvec) +
+  scale_color_manual(values = colvec) +
+  
+  # Add significance letters
+  geom_text(data = as.data.frame(cld_result), 
+            aes(x = SymTreatment, y = emmean + 5, label = .group),
+            color = "black", size = 5, inherit.aes = FALSE) +
+  
+  ylab("EDU / Nuclei (%)") +
+  xlab("") +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.title = element_blank()
+  )
+
+wes_nf
+ggsave("~/Desktop/Cell_cycle/EDU_data.pdf", wes_nf, width =5, height = 4)
+```
+
